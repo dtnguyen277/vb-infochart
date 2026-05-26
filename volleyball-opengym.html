@@ -295,6 +295,26 @@ const DEFAULT_CONFIG = {
     font-style: italic;
     font-size: 2vh;
   }
+  .add-round-main {
+    align-self: center;
+    margin: 1vh auto 0;
+    width: 3.6vh; height: 3.6vh;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--muted);
+    border: 1px dashed var(--border);
+    cursor: pointer;
+    font: inherit;
+    font-size: 2.4vh; font-weight: 700; line-height: 1;
+    padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+  }
+  .add-round-main:hover {
+    color: var(--text);
+    border-color: var(--text);
+    background: rgba(255,255,255,0.05);
+  }
   .match .blank.clickable, .match .tbd-chip.clickable {
     cursor: pointer;
     transition: color 0.12s, border-color 0.12s, background 0.12s;
@@ -829,6 +849,7 @@ const DEFAULT_CONFIG = {
     }
     .edit-btn svg { width: 17px; height: 17px; }
     .edit-lineups-btn { font-size: 10px; padding: 5px 8px; }
+    .add-round-main { width: 32px; height: 32px; font-size: 20px; margin-top: 8px; }
 
     .editor { width: 100vw; }
   }
@@ -1026,6 +1047,21 @@ const DEFAULT_CONFIG = {
   function clearMatchFromMain(roundIdx, pairingIdx) {
     materializeMatchesIfAuto();
     CONFIG.matches[roundIdx].pairings[pairingIdx] = { teams: ["TBD", "TBD"], winner: null };
+    recomputeKingDownstream();
+    saveConfig(CONFIG);
+    render();
+  }
+
+  function addRoundFromMain() {
+    materializeMatchesIfAuto();
+    // Round-robin is a fixed 3-round structure; extending it means we're
+    // customizing — flip to manual so the mode label stays honest.
+    if (getScheduleMode() === "round-robin") CONFIG.scheduleMode = "manual";
+    const nextRoundNumber = CONFIG.matches.length + 1;
+    CONFIG.matches.push({
+      round: nextRoundNumber,
+      pairings: CONFIG.courts.map(() => ({ teams: ["TBD", "TBD"], winner: null })),
+    });
     recomputeKingDownstream();
     saveConfig(CONFIG);
     render();
@@ -1285,6 +1321,13 @@ const DEFAULT_CONFIG = {
 
     const mode = getScheduleMode();
     const canEditLineups = mode === "manual";
+
+    const addRoundBtn = el("button", {
+      class: "add-round-main",
+      title: "Add another round",
+      onclick: () => addRoundFromMain(),
+    }, "+");
+
     return el("section", { class: "panel" },
       el("div", { class: "panel-head" },
         el("div", { class: "panel-title" }, "Match Schedule"),
@@ -1302,7 +1345,8 @@ const DEFAULT_CONFIG = {
           },
         }, editing ? "Done" : "Edit lineups"),
       ),
-      grid
+      grid,
+      addRoundBtn,
     );
   }
 
