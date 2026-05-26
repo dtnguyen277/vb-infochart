@@ -415,6 +415,7 @@ const DEFAULT_CONFIG = {
     top: 0; right: 0;
     width: min(560px, 100vw);
     height: 100vh;
+    height: 100dvh; /* mobile-safe — accounts for URL bar */
     background: var(--panel);
     border-left: 1px solid var(--border);
     z-index: 21;
@@ -439,8 +440,15 @@ const DEFAULT_CONFIG = {
   .editor-body {
     flex: 1;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     padding: 16px 20px 100px;
   }
+  /* When the editor is open, lock background scrolling. */
+  body.editor-open { overflow: hidden !important; }
+  body.editor-open .stage { pointer-events: none; }
+  body.editor-open .editor { pointer-events: auto; }
+  body.editor-open .editor-overlay { pointer-events: auto; }
   .editor-foot {
     position: absolute;
     bottom: 0; left: 0; right: 0;
@@ -1154,12 +1162,14 @@ const DEFAULT_CONFIG = {
   function openEditor() {
     DRAFT = structuredClone(CONFIG);
     renderEditor();
+    document.body.classList.add("editor-open");
     $("#editor").classList.add("open");
     $("#editorOverlay").classList.add("open");
   }
   function closeEditor() {
     DRAFT = null;
     pendingIoStatus = null;
+    document.body.classList.remove("editor-open");
     $("#editor").classList.remove("open");
     $("#editorOverlay").classList.remove("open");
   }
