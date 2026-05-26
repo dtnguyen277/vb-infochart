@@ -267,8 +267,13 @@ const DEFAULT_CONFIG = {
     border-color: color-mix(in srgb, var(--team-color, var(--accent)) 80%, transparent);
     box-shadow: 0 0 0 0.2vh color-mix(in srgb, var(--team-color, var(--accent)) 28%, transparent);
   }
-  .match .team-chip .trophy {
-    font-size: 1.8vh; line-height: 1;
+  .match .winner-slot {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5vw;
+  }
+  .match .winner-slot .trophy {
+    font-size: 2vh; line-height: 1;
     filter: drop-shadow(0 1px 1px rgba(0,0,0,0.4));
   }
   .match .tbd-chip {
@@ -817,10 +822,13 @@ const DEFAULT_CONFIG = {
     }
     .match .team-chip,
     .match .tbd-chip,
-    .match .blank.clickable {
+    .match .blank.clickable,
+    .match .winner-slot {
       width: 100%;
       justify-content: flex-start;
     }
+    .match .winner-slot .team-chip { width: auto; flex: 1; }
+    .match .winner-slot .trophy { font-size: 13px; }
     .match .team-chip { font-size: 13px; padding: 4px 8px; gap: 6px; border-radius: 5px; }
     .match .team-chip .team-dot { width: 7px; height: 7px; }
     .match .team-chip.winner { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--team-color, var(--accent)) 28%, transparent); }
@@ -1254,10 +1262,14 @@ const DEFAULT_CONFIG = {
         ?? (isWinner ? `Click to unmark ${value} as winner` : `Click to mark ${value} as winner`);
     }
     const chip = el("span", attrs);
-    if (isWinner) chip.appendChild(el("span", { class: "trophy" }, "🏆"));
     chip.appendChild(el("span", { class: "team-dot" }));
     chip.appendChild(el("span", {}, value));
-    return chip;
+    if (!isWinner) return chip;
+    // Winners get a trophy sitting outside the colored border of the chip.
+    return el("span", { class: "winner-slot" },
+      el("span", { class: "trophy" }, "🏆"),
+      chip,
+    );
   }
 
   function renderSchedule() {
