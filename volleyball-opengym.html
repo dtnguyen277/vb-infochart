@@ -296,16 +296,17 @@ const DEFAULT_CONFIG = {
     font-size: 2vh;
   }
   .add-round-main {
-    align-self: center;
-    margin: 1vh auto 0;
-    width: 3.6vh; height: 3.6vh;
+    grid-column: 1;
+    justify-self: center;
+    margin-top: 0.8vh;
+    width: 3.2vh; height: 3.2vh;
     border-radius: 50%;
     background: transparent;
     color: var(--muted);
     border: 1px dashed var(--border);
     cursor: pointer;
     font: inherit;
-    font-size: 2.4vh; font-weight: 700; line-height: 1;
+    font-size: 2.2vh; font-weight: 700; line-height: 1;
     padding: 0;
     display: inline-flex; align-items: center; justify-content: center;
     transition: color 0.15s, border-color 0.15s, background 0.15s;
@@ -1322,11 +1323,12 @@ const DEFAULT_CONFIG = {
     const mode = getScheduleMode();
     const canEditLineups = mode === "manual";
 
-    const addRoundBtn = el("button", {
+    // + button sits in the Round column, right below the last round number.
+    grid.appendChild(el("button", {
       class: "add-round-main",
       title: "Add another round",
       onclick: () => addRoundFromMain(),
-    }, "+");
+    }, "+"));
 
     return el("section", { class: "panel" },
       el("div", { class: "panel-head" },
@@ -1346,7 +1348,6 @@ const DEFAULT_CONFIG = {
         }, editing ? "Done" : "Edit lineups"),
       ),
       grid,
-      addRoundBtn,
     );
   }
 
