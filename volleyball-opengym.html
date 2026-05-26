@@ -1,0 +1,1186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Volleyball Open Gym</title>
+
+<!-- =====================================================================
+     DEFAULT SESSION CONFIG — you can also edit live via the Edit button.
+     Live edits are saved to your browser (localStorage); use "Reset to
+     file defaults" in the editor to clear them.
+     ===================================================================== -->
+<script>
+const DEFAULT_CONFIG = {
+  sessionTitle: "Sunday Open Gym",
+  date: "May 25, 2026",
+  subtitle: "",                  // optional: "7:00 - 9:00 PM" etc.
+
+  courts: ["Court 1", "Court 2"],
+
+  teams: [
+    { name: "Red",    color: "#ef4444", roster: ["Alice","Ben","Chris","Dana","Eli","Evan"] },
+    { name: "Blue",   color: "#3b82f6", roster: ["Frank","Grace","Henry","Ivy","Jay","Jess"] },
+    { name: "Green",  color: "#22c55e", roster: ["Kara","Leo","Maya","Noah","Owen","Olivia"] },
+    { name: "Yellow", color: "#eab308", roster: ["Pat","Quinn","Riley","Sam","Tara","Tom"] },
+  ],
+
+  // Leave matches: null to auto-generate round-robin from the 4 teams above.
+  matches: null,
+
+  rules: [
+    "Rally scoring to 25, win by 2",
+    "Best of 3 sets per match",
+    "Switch courts after each match",
+    "Rotate servers every 5 points",
+    "Self-ref — call your own touches and lines",
+  ],
+};
+</script>
+<!-- ===================================================================== -->
+
+<style>
+  :root {
+    --bg: #0b0f17;
+    --panel: #121826;
+    --panel-2: #182033;
+    --border: #243049;
+    --text: #f1f5f9;
+    --muted: #7b8aa8;
+    --accent: #e2e8f0;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  .stage {
+    height: 100vh;
+    width: 100vw;
+    display: grid;
+    grid-template-rows: 8vh 1fr 1fr;
+    gap: 1.2vh;
+    padding: 1.2vh 1.4vw;
+  }
+
+  /* ---------- HEADER ---------- */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 1.2vw;
+    border-bottom: 1px solid var(--border);
+  }
+  .header .title-block { display: flex; flex-direction: column; gap: 0.4vh; }
+  .header .title { font-size: 4vh; font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
+  .header .subtitle {
+    font-size: 1.6vh; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.18em;
+  }
+  .header .date-block {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 0.2vh;
+    border-left: 2px solid var(--border);
+    padding-left: 1.4vw;
+  }
+  .header .weekday {
+    font-size: 1.6vh; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.22em;
+    line-height: 1;
+  }
+  .header .date {
+    font-size: 2.6vh; font-weight: 800; letter-spacing: -0.01em;
+    color: var(--text); line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- TEAMS ROW ---------- */
+  .teams {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.2vw;
+  }
+  .team {
+    --tint-strong: color-mix(in srgb, var(--team-color, var(--accent)) 22%, var(--panel));
+    --tint-soft:   color-mix(in srgb, var(--team-color, var(--accent)) 10%, var(--panel));
+    background: linear-gradient(180deg, var(--tint-strong) 0%, var(--tint-soft) 100%);
+    border: 1px solid color-mix(in srgb, var(--team-color, var(--accent)) 45%, var(--border));
+    border-radius: 1.4vh;
+    padding: 0 1.6vw 1.8vh;
+    display: flex; flex-direction: column;
+    min-width: 0;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 0 0 0 var(--team-color);
+  }
+  .team-header {
+    background: var(--team-color, var(--accent));
+    margin: 0 -1.6vw 1.6vh;
+    padding: 1.6vh 1.6vw;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 0.8vw;
+  }
+  .team-name {
+    font-size: 3vh; font-weight: 900; letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.25);
+  }
+  .team-wins {
+    display: inline-flex; align-items: baseline; gap: 0.3vw;
+    background: rgba(0, 0, 0, 0.32);
+    color: #fff;
+    padding: 0.5vh 0.9vw;
+    border-radius: 0.6vh;
+    font-variant-numeric: tabular-nums;
+  }
+  .team-wins .wins-num {
+    font-size: 2.4vh; font-weight: 800;
+    line-height: 1;
+  }
+  .team-wins .wins-label {
+    font-size: 1.4vh; font-weight: 700;
+    opacity: 0.75;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .roster {
+    display: flex; flex-direction: column;
+    gap: 0.6vh;
+    list-style: none; padding: 0; margin: 0;
+    flex: 1;
+  }
+  .roster li {
+    font-size: 2.2vh;
+    font-weight: 600;
+    padding: 0.5vh 0;
+    border-bottom: 1px dashed color-mix(in srgb, var(--team-color, var(--accent)) 35%, transparent);
+    color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .roster li:last-child { border-bottom: none; }
+  .roster li.empty { color: var(--muted); font-style: italic; font-weight: 400; }
+
+  /* ---------- BOTTOM ROW: SCHEDULE + RULES ---------- */
+  .bottom {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 1.2vw;
+    min-height: 0;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 1.4vh;
+    padding: 2vh 1.6vw;
+    display: flex; flex-direction: column;
+    min-width: 0; min-height: 0;
+  }
+  .panel-title {
+    font-size: 2.2vh; font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 1.6vh;
+  }
+
+  /* ---------- SCHEDULE ---------- */
+  .schedule {
+    flex: 1;
+    display: grid;
+    grid-template-columns: auto repeat(var(--court-count, 2), 1fr);
+    gap: 0.4vh 1.2vw;
+    align-content: start;
+  }
+  .sched-cell {
+    display: flex; align-items: center;
+    padding: 1.1vh 0.4vw;
+    font-size: 2.4vh;
+    border-bottom: 1px solid var(--border);
+  }
+  .sched-head {
+    font-size: 1.6vh; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.1em;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.8vh;
+  }
+  .sched-round {
+    font-weight: 800; font-size: 2.6vh;
+    color: var(--muted);
+    justify-content: center;
+    min-width: 4vw;
+  }
+  .match { display: flex; align-items: center; gap: 0.8vw; font-weight: 700; }
+  .match .vs {
+    color: var(--muted); font-weight: 500; font-size: 1.8vh;
+    text-transform: uppercase; letter-spacing: 0.12em;
+  }
+  .match .team-chip {
+    display: inline-flex; align-items: center; gap: 0.5vw;
+    padding: 0.3vh 0.7vw;
+    border-radius: 0.6vh;
+    background: color-mix(in srgb, var(--team-color, var(--accent)) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--team-color, var(--accent)) 50%, transparent);
+    position: relative;
+    cursor: pointer;
+    transition: filter 0.12s, transform 0.08s, background 0.12s;
+    user-select: none;
+  }
+  .match .team-chip:hover {
+    filter: brightness(1.18);
+    background: color-mix(in srgb, var(--team-color, var(--accent)) 28%, transparent);
+  }
+  .match .team-chip:active { transform: scale(0.97); }
+  .match .team-chip .team-dot {
+    width: 1.2vh; height: 1.2vh;
+    background: var(--team-color, var(--accent));
+    border-radius: 50%;
+  }
+  .match .team-chip.winner {
+    background: color-mix(in srgb, var(--team-color, var(--accent)) 32%, transparent);
+    border-color: color-mix(in srgb, var(--team-color, var(--accent)) 80%, transparent);
+    box-shadow: 0 0 0 0.2vh color-mix(in srgb, var(--team-color, var(--accent)) 28%, transparent);
+  }
+  .match .team-chip .trophy {
+    font-size: 1.8vh; line-height: 1;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.4));
+  }
+  .match .tbd-chip {
+    display: inline-flex; align-items: center;
+    padding: 0.3vh 0.9vw;
+    border-radius: 0.6vh;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    font-weight: 700;
+    font-size: 1.8vh;
+    letter-spacing: 0.12em;
+  }
+  .match .blank {
+    color: var(--border);
+    font-weight: 700;
+    font-size: 2.4vh;
+    padding: 0 0.4vw;
+  }
+  .sched-cell.match-blank {
+    grid-column: span 1;
+    justify-content: center;
+    color: var(--border);
+    font-style: italic;
+    font-size: 2vh;
+  }
+
+  /* ---------- RULES ---------- */
+  .rules {
+    flex: 1;
+    list-style: none; padding: 0; margin: 0;
+    display: flex; flex-direction: column;
+    gap: 1.2vh;
+  }
+  .rules li {
+    font-size: 2.2vh;
+    line-height: 1.35;
+    padding-left: 1.6vw;
+    position: relative;
+  }
+  .rules li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 1.1vh;
+    width: 0.7vh; height: 0.7vh;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  /* ---------- EDITOR ---------- */
+  .edit-btn {
+    position: fixed;
+    bottom: 1.6vh; right: 1.6vh;
+    z-index: 10;
+    width: 4.2vh; height: 4.2vh;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.04);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: 0.25;
+    transition: opacity 0.2s, color 0.2s, background 0.2s, transform 0.2s;
+    font-family: inherit;
+    padding: 0;
+  }
+  .edit-btn:hover {
+    opacity: 1;
+    color: var(--text);
+    background: rgba(255,255,255,0.12);
+    transform: scale(1.05);
+  }
+  .edit-btn svg { width: 2vh; height: 2vh; display: block; }
+
+  .editor-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 20;
+    display: none;
+  }
+  .editor-overlay.open { display: block; }
+
+  .editor {
+    position: fixed;
+    top: 0; right: 0;
+    width: min(560px, 100vw);
+    height: 100vh;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    z-index: 21;
+    display: none;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.2s ease-out;
+    font-size: 14px;
+  }
+  .editor.open { display: flex; transform: translateX(0); }
+
+  .editor-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .editor-head h2 { margin: 0; font-size: 18px; font-weight: 700; }
+  .editor-head button {
+    background: transparent; color: var(--muted);
+    border: none; font-size: 22px; cursor: pointer; line-height: 1;
+  }
+  .editor-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px 100px;
+  }
+  .editor-foot {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 14px 20px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    display: flex; gap: 10px; justify-content: space-between;
+  }
+  .editor-foot .left { display: flex; gap: 8px; }
+  .editor-foot .right { display: flex; gap: 8px; }
+
+  .ed-section { margin-bottom: 22px; }
+  .ed-section h3 {
+    margin: 0 0 10px;
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--muted);
+  }
+  .ed-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .ed-row label { width: 80px; font-size: 12px; color: var(--muted); }
+  .ed-row input[type="text"], .ed-row input[type="color"] {
+    flex: 1; min-width: 0;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font: inherit;
+  }
+  .ed-row input[type="color"] {
+    width: 44px; height: 32px; padding: 2px; flex: 0 0 44px; cursor: pointer;
+  }
+
+  .team-edit {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--team-color, var(--accent));
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .team-edit-head { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .team-edit-head input[type="text"] {
+    flex: 1; font-weight: 700;
+    background: transparent; color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-size: 13px;
+  }
+  .roster-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .roster-grid input {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px; font: inherit; min-width: 0;
+  }
+
+  .rules-list { display: flex; flex-direction: column; gap: 6px; }
+  .rule-row { display: flex; gap: 6px; }
+  .rule-row input {
+    flex: 1; min-width: 0;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font: inherit;
+  }
+  .rule-row button, .add-rule, .add-round {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer; font: inherit;
+  }
+  .rule-row button:hover, .add-rule:hover, .add-round:hover {
+    color: var(--text); border-color: var(--text);
+  }
+  .add-rule, .add-round { align-self: flex-start; margin-top: 6px; font-size: 12px; }
+
+  /* Schedule editor */
+  .auto-toggle {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+  }
+  .auto-toggle input { margin: 0; }
+  .round-edit {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .round-edit-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+  .round-edit-head .round-label { color: var(--text); font-size: 13px; }
+  .round-edit-head button {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 2px 8px; cursor: pointer; font: inherit; font-size: 11px;
+  }
+  .round-edit-head button:hover { color: #f87171; border-color: #7f1d1d; }
+  .court-row {
+    display: grid;
+    grid-template-columns: 70px 1fr auto 1fr auto;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .court-row .clear-match {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; font: inherit; font-size: 14px; line-height: 1;
+    padding: 0;
+  }
+  .court-row .clear-match:hover { color: #f87171; border-color: #7f1d1d; }
+  .court-row .clear-match:disabled { opacity: 0.3; cursor: default; }
+  .court-row .clear-match:disabled:hover { color: var(--muted); border-color: var(--border); }
+
+  .winner-row {
+    display: flex; align-items: center; gap: 6px;
+    margin: 0 0 8px 76px;
+    font-size: 11px;
+  }
+  .winner-row .winner-label {
+    color: var(--muted); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .winner-row .win-btn {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 3px 8px; cursor: pointer; font: inherit; font-size: 11px;
+    font-weight: 700;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .winner-row .win-btn:hover:not(:disabled) { color: var(--text); border-color: var(--text); }
+  .winner-row .win-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .winner-row .win-btn.active {
+    background: var(--win-color, var(--accent));
+    border-color: var(--win-color, var(--accent));
+    color: #0b0f17;
+  }
+  .winner-row .win-btn .swatch {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--win-color, var(--accent));
+    border: 1px solid rgba(0,0,0,0.25);
+  }
+  .winner-row .win-btn.active .swatch { background: rgba(0,0,0,0.35); border-color: transparent; }
+  .winner-row .win-none { opacity: 0.8; }
+  .court-row:last-child { margin-bottom: 0; }
+  .court-row .court-label {
+    font-size: 11px; font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .slot-wrap {
+    position: relative;
+    display: flex; align-items: center;
+    min-width: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding-left: 8px;
+    transition: border-color 0.15s;
+  }
+  .slot-wrap.has-color { border-color: color-mix(in srgb, var(--slot-color, var(--border)) 55%, var(--border)); }
+  .slot-swatch {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--slot-color, transparent);
+    border: 1px solid color-mix(in srgb, var(--slot-color, var(--border)) 60%, var(--border));
+    flex-shrink: 0;
+  }
+  .slot-wrap.empty .slot-swatch { background: transparent; border-style: dashed; }
+  .slot-wrap.tbd .slot-swatch {
+    background: repeating-linear-gradient(45deg, var(--muted) 0 2px, transparent 2px 4px);
+    border-color: var(--muted);
+  }
+  .slot-wrap select {
+    flex: 1; min-width: 0;
+    background: transparent;
+    color: var(--text);
+    border: none;
+    padding: 6px 8px; font: inherit;
+    appearance: none; -webkit-appearance: none;
+    cursor: pointer;
+  }
+  .slot-wrap select:focus { outline: none; }
+  .court-row .vs-lbl {
+    font-size: 11px; color: var(--muted); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    text-align: center; padding: 0 4px;
+  }
+  .sched-actions {
+    display: flex; gap: 8px; margin-top: 8px;
+  }
+  .btn.ghost {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer; font: inherit; font-size: 12px;
+  }
+  .btn.ghost:hover { color: var(--text); border-color: var(--text); }
+  .btn.ghost.danger:hover { color: #f87171; border-color: #7f1d1d; }
+
+  .btn {
+    background: var(--accent); color: #0b0f17;
+    border: none; border-radius: 6px;
+    padding: 9px 14px; font-weight: 700; cursor: pointer; font: inherit;
+    font-size: 13px;
+  }
+  .btn.secondary {
+    background: transparent; color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn.danger { background: transparent; color: #f87171; border: 1px solid #7f1d1d; }
+  .btn:hover { filter: brightness(1.05); }
+
+  @media print { .edit-btn, .editor-overlay, .editor { display: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage"></div>
+
+<button class="edit-btn" id="editBtn" title="Edit session" aria-label="Edit session">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 20h9"/>
+    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+  </svg>
+</button>
+
+<div class="editor-overlay" id="editorOverlay"></div>
+<aside class="editor" id="editor">
+  <div class="editor-head">
+    <h2>Edit Session</h2>
+    <button id="closeEditor" title="Close">×</button>
+  </div>
+  <div class="editor-body" id="editorBody"></div>
+  <div class="editor-foot">
+    <div class="left">
+      <button class="btn danger" id="resetBtn">Reset to file defaults</button>
+    </div>
+    <div class="right">
+      <button class="btn secondary" id="cancelBtn">Cancel</button>
+      <button class="btn" id="saveBtn">Save</button>
+    </div>
+  </div>
+</aside>
+
+<script>
+  // ============ STATE ============
+  const STORAGE_KEY = "vb-opengym-config";
+
+  // Normalize a pairing to { teams: [a, b], winner: null | 0 | 1 }.
+  // Accepts legacy array shape [a, b].
+  function normalizePairing(p) {
+    if (!p) return { teams: ["", ""], winner: null };
+    if (Array.isArray(p)) return { teams: [p[0] ?? "", p[1] ?? ""], winner: null };
+    const teams = [p.teams?.[0] ?? "", p.teams?.[1] ?? ""];
+    const w = (p.winner === 0 || p.winner === 1) ? p.winner : null;
+    // Winner must point to a real team (not blank or TBD).
+    const valid = w !== null && teams[w] && teams[w] !== "TBD";
+    return { teams, winner: valid ? w : null };
+  }
+  function normalizeMatches(matches) {
+    if (matches == null) return null;
+    return matches.map((m, i) => ({
+      round: m.round ?? i + 1,
+      pairings: (m.pairings || []).map(normalizePairing),
+    }));
+  }
+  function normalizeConfig(cfg) {
+    cfg.matches = normalizeMatches(cfg.matches);
+    return cfg;
+  }
+
+  function loadConfig() {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) return normalizeConfig(JSON.parse(stored));
+    } catch (e) { console.warn("Bad stored config, using defaults", e); }
+    return normalizeConfig(structuredClone(DEFAULT_CONFIG));
+  }
+  function saveConfig(cfg) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+  }
+  function clearConfig() { localStorage.removeItem(STORAGE_KEY); }
+
+  let CONFIG = loadConfig();
+  let DRAFT = null; // working copy while editor is open
+
+  // ============ HELPERS ============
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const el = (tag, attrs = {}, ...children) => {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "style") {
+        for (const [sk, sv] of Object.entries(v)) {
+          if (sk.startsWith("--")) node.style.setProperty(sk, sv);
+          else node.style[sk] = sv;
+        }
+      }
+      else if (k === "class") node.className = v;
+      else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v);
+    }
+    for (const c of children.flat()) {
+      if (c == null || c === false) continue;
+      node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+    }
+    return node;
+  };
+  const teamByName = (name) => CONFIG.teams.find(t => t.name === name);
+
+  function generateRoundRobin(teams) {
+    if (teams.length !== 4) {
+      console.warn("Auto round-robin assumes 4 teams.");
+      return [];
+    }
+    const [a, b, c, d] = teams.map(t => t.name);
+    const mk = (x, y) => ({ teams: [x, y], winner: null });
+    return [
+      { round: 1, pairings: [mk(a, b), mk(c, d)] },
+      { round: 2, pairings: [mk(a, c), mk(b, d)] },
+      { round: 3, pairings: [mk(a, d), mk(b, c)] },
+    ];
+  }
+
+  // ============ RENDER ============
+  function deriveWeekday(dateStr) {
+    if (!dateStr) return "";
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { weekday: "long" });
+  }
+
+  function renderHeader() {
+    const titleBlock = el("div", { class: "title-block" },
+      el("div", { class: "title" }, CONFIG.sessionTitle),
+      CONFIG.subtitle ? el("div", { class: "subtitle" }, CONFIG.subtitle) : null,
+    );
+
+    const weekday = deriveWeekday(CONFIG.date);
+    const dateBlock = el("div", { class: "date-block" });
+    if (weekday) dateBlock.appendChild(el("div", { class: "weekday" }, weekday));
+    if (CONFIG.date) dateBlock.appendChild(el("div", { class: "date" }, CONFIG.date));
+
+    return el("header", { class: "header" }, titleBlock, dateBlock);
+  }
+
+  function computeWinTotals() {
+    const totals = Object.fromEntries(CONFIG.teams.map(t => [t.name, 0]));
+    const matches = CONFIG.matches ?? generateRoundRobin(CONFIG.teams);
+    for (const m of matches) {
+      for (const p of (m.pairings || [])) {
+        const pair = normalizePairing(p);
+        if (pair.winner == null) continue;
+        const winnerName = pair.teams[pair.winner];
+        if (winnerName in totals) totals[winnerName]++;
+      }
+    }
+    return totals;
+  }
+
+  function renderTeams() {
+    const wrap = el("section", { class: "teams" });
+    const wins = computeWinTotals();
+    for (const t of CONFIG.teams) {
+      const roster = el("ul", { class: "roster" });
+      for (let i = 0; i < 6; i++) {
+        const name = t.roster[i];
+        roster.appendChild(name
+          ? el("li", {}, name)
+          : el("li", { class: "empty" }, "—"));
+      }
+      const card = el("div", { class: "team", style: { "--team-color": t.color } },
+        el("div", { class: "team-header" },
+          el("span", { class: "team-name" }, t.name),
+          el("span", { class: "team-wins", title: `${wins[t.name] ?? 0} win${(wins[t.name] ?? 0) === 1 ? "" : "s"}` },
+            el("span", { class: "wins-num" }, String(wins[t.name] ?? 0)),
+            el("span", { class: "wins-label" }, "W"),
+          ),
+        ),
+        roster
+      );
+      wrap.appendChild(card);
+    }
+    return wrap;
+  }
+
+  // Toggle winner from the main view. If schedule is auto, materialize it first
+  // so the choice can be stored.
+  function toggleWinnerFromMain(roundIdx, pairingIdx, slotIdx) {
+    if (CONFIG.matches == null) {
+      const seed = generateRoundRobin(CONFIG.teams);
+      CONFIG.matches = seed.map(m => ({
+        round: m.round,
+        pairings: m.pairings.map(p => ({ teams: [...p.teams], winner: null })),
+      }));
+    }
+    const pair = normalizePairing(CONFIG.matches[roundIdx].pairings[pairingIdx]);
+    CONFIG.matches[roundIdx].pairings[pairingIdx] = pair;
+    pair.winner = pair.winner === slotIdx ? null : slotIdx;
+    saveConfig(CONFIG);
+    render();
+  }
+
+  // Slot value: "" (blank), "TBD", or a team name. isWinner adds trophy + glow.
+  // onClick (optional) makes the chip toggle winner state.
+  function renderSlot(value, isWinner, onClick) {
+    if (!value) return el("span", { class: "blank" }, "—");
+    if (value === "TBD") return el("span", { class: "tbd-chip" }, "TBD");
+    const t = teamByName(value);
+    const color = t ? t.color : "var(--accent)";
+    const attrs = {
+      class: "team-chip" + (isWinner ? " winner" : ""),
+      style: { "--team-color": color },
+      title: isWinner ? `Click to unmark ${value} as winner` : `Click to mark ${value} as winner`,
+    };
+    if (onClick) attrs.onclick = onClick;
+    const chip = el("span", attrs);
+    if (isWinner) chip.appendChild(el("span", { class: "trophy" }, "🏆"));
+    chip.appendChild(el("span", { class: "team-dot" }));
+    chip.appendChild(el("span", {}, value));
+    return chip;
+  }
+
+  function renderSchedule() {
+    const matches = CONFIG.matches ?? generateRoundRobin(CONFIG.teams);
+    const courts = CONFIG.courts;
+
+    const grid = el("div", { class: "schedule",
+      style: { "--court-count": courts.length } });
+
+    grid.appendChild(el("div", { class: "sched-head" }, "Round"));
+    for (const c of courts) grid.appendChild(el("div", { class: "sched-head" }, c));
+
+    matches.forEach((m, ri) => {
+      grid.appendChild(el("div", { class: "sched-cell sched-round" }, "R" + m.round));
+      for (let i = 0; i < courts.length; i++) {
+        const pair = normalizePairing(m.pairings[i]);
+        const [a, b] = pair.teams;
+        if (!a && !b) {
+          grid.appendChild(el("div", { class: "sched-cell match-blank" }, "—"));
+          continue;
+        }
+        const cell = el("div", { class: "sched-cell match" });
+        const clickA = (a && a !== "TBD")
+          ? () => toggleWinnerFromMain(ri, i, 0) : null;
+        const clickB = (b && b !== "TBD")
+          ? () => toggleWinnerFromMain(ri, i, 1) : null;
+        cell.appendChild(renderSlot(a, pair.winner === 0, clickA));
+        cell.appendChild(el("span", { class: "vs" }, "vs"));
+        cell.appendChild(renderSlot(b, pair.winner === 1, clickB));
+        grid.appendChild(cell);
+      }
+    });
+
+    return el("section", { class: "panel" },
+      el("div", { class: "panel-title" }, "Match Schedule"),
+      grid
+    );
+  }
+
+  function renderRules() {
+    const list = el("ul", { class: "rules" });
+    for (const r of CONFIG.rules) list.appendChild(el("li", {}, r));
+    return el("section", { class: "panel" },
+      el("div", { class: "panel-title" }, "Rules"),
+      list
+    );
+  }
+
+  function render() {
+    const stage = $("#stage");
+    stage.innerHTML = "";
+    stage.appendChild(renderHeader());
+    stage.appendChild(renderTeams());
+    stage.appendChild(el("div", { class: "bottom" }, renderSchedule(), renderRules()));
+  }
+
+  // ============ EDITOR ============
+  function openEditor() {
+    DRAFT = structuredClone(CONFIG);
+    renderEditor();
+    $("#editor").classList.add("open");
+    $("#editorOverlay").classList.add("open");
+  }
+  function closeEditor() {
+    DRAFT = null;
+    $("#editor").classList.remove("open");
+    $("#editorOverlay").classList.remove("open");
+  }
+
+  function input(value, onInput, opts = {}) {
+    return el("input", {
+      type: opts.type || "text",
+      value: value ?? "",
+      placeholder: opts.placeholder || "",
+      oninput: (e) => onInput(e.target.value),
+    });
+  }
+
+  function renderEditor() {
+    const body = $("#editorBody");
+    body.innerHTML = "";
+
+    // Session
+    const sessionSec = el("div", { class: "ed-section" },
+      el("h3", {}, "Session"),
+      el("div", { class: "ed-row" },
+        el("label", {}, "Title"),
+        input(DRAFT.sessionTitle, v => DRAFT.sessionTitle = v)),
+      el("div", { class: "ed-row" },
+        el("label", {}, "Date"),
+        input(DRAFT.date, v => DRAFT.date = v, { placeholder: "May 25, 2026" })),
+      el("div", { class: "ed-row" },
+        el("label", {}, "Subtitle"),
+        input(DRAFT.subtitle, v => DRAFT.subtitle = v, { placeholder: "7:00 - 9:00 PM (optional)" })),
+    );
+    body.appendChild(sessionSec);
+
+    // Courts
+    const courtsSec = el("div", { class: "ed-section" }, el("h3", {}, "Courts"));
+    DRAFT.courts.forEach((c, i) => {
+      courtsSec.appendChild(el("div", { class: "ed-row" },
+        el("label", {}, "Court " + (i + 1)),
+        input(c, v => DRAFT.courts[i] = v)));
+    });
+    body.appendChild(courtsSec);
+
+    // Teams
+    const teamsSec = el("div", { class: "ed-section" }, el("h3", {}, "Teams & Rosters"));
+    DRAFT.teams.forEach((team, ti) => {
+      const rosterInputs = el("div", { class: "roster-grid" });
+      for (let ri = 0; ri < 6; ri++) {
+        const val = team.roster[ri] ?? "";
+        rosterInputs.appendChild(el("input", {
+          type: "text",
+          value: val,
+          placeholder: "Player " + (ri + 1),
+          oninput: (e) => {
+            team.roster[ri] = e.target.value;
+            // keep array length stable at 6 with falsy filtered on save
+          },
+        }));
+      }
+      const card = el("div", { class: "team-edit", style: { "--team-color": team.color } },
+        el("div", { class: "team-edit-head" },
+          el("input", {
+            type: "color",
+            value: team.color,
+            oninput: (e) => {
+              team.color = e.target.value;
+              card.style.setProperty("--team-color", e.target.value);
+            },
+          }),
+          el("input", {
+            type: "text",
+            value: team.name,
+            placeholder: "Team name",
+            oninput: (e) => team.name = e.target.value,
+          }),
+        ),
+        rosterInputs,
+      );
+      teamsSec.appendChild(card);
+    });
+    body.appendChild(teamsSec);
+
+    // Schedule
+    const schedSec = el("div", { class: "ed-section" }, el("h3", {}, "Match Schedule"));
+    const schedBody = el("div", {});
+    const isAuto = DRAFT.matches == null;
+
+    function colorForValue(value) {
+      if (!value || value === "TBD") return "";
+      const t = DRAFT.teams.find(x => x.name === value);
+      return t ? t.color : "";
+    }
+    function applySlotStyle(wrap, value) {
+      const color = colorForValue(value);
+      wrap.classList.toggle("has-color", !!color);
+      wrap.classList.toggle("empty", !value);
+      wrap.classList.toggle("tbd", value === "TBD");
+      wrap.style.setProperty("--slot-color", color || "");
+    }
+    function makeSlotSelect(currentValue, onChange) {
+      const sel = el("select", {});
+      const opts = [
+        { value: "", label: "— blank —", color: "" },
+        { value: "TBD", label: "TBD", color: "" },
+        ...DRAFT.teams.map(t => ({ value: t.name, label: "● " + t.name, color: t.color })),
+      ];
+      for (const o of opts) {
+        const opt = el("option", { value: o.value }, o.label);
+        if (o.color) {
+          // Browsers vary on supporting option styles; Chrome/Edge respect them.
+          opt.style.color = o.color;
+          opt.style.background = "#0b0f17";
+          opt.style.fontWeight = "700";
+        }
+        if ((currentValue ?? "") === o.value) opt.selected = "selected";
+        sel.appendChild(opt);
+      }
+      const swatch = el("span", { class: "slot-swatch" });
+      const wrap = el("div", { class: "slot-wrap" }, swatch, sel);
+      applySlotStyle(wrap, currentValue ?? "");
+      sel.addEventListener("change", (e) => {
+        applySlotStyle(wrap, e.target.value);
+        onChange(e.target.value);
+      });
+      return wrap;
+    }
+
+    function drawSchedule() {
+      schedBody.innerHTML = "";
+      const toggle = el("label", { class: "auto-toggle" },
+        el("input", {
+          type: "checkbox",
+          ...(isAutoNow() ? { checked: "checked" } : {}),
+          onchange: (e) => {
+            if (e.target.checked) {
+              DRAFT.matches = null;
+            } else {
+              // Materialize current auto schedule as editable copy.
+              const seed = generateRoundRobin(DRAFT.teams);
+              DRAFT.matches = seed.map(m => ({
+                round: m.round,
+                pairings: m.pairings.map(p => ({ teams: [...p.teams], winner: null })),
+              }));
+            }
+            drawSchedule();
+          },
+        }),
+        el("span", {}, "Auto-generate round-robin from teams"),
+      );
+      schedBody.appendChild(toggle);
+
+      if (isAutoNow()) {
+        schedBody.appendChild(el("div", {
+          style: { color: "var(--muted)", fontSize: "12px", fontStyle: "italic" }
+        }, "Schedule is generated automatically. Uncheck to customize."));
+        return;
+      }
+
+      function winnerEligible(value) {
+        return value && value !== "TBD";
+      }
+      function makeWinBtn(pair, slotIdx) {
+        const name = pair.teams[slotIdx];
+        const eligible = winnerEligible(name);
+        const color = colorForValue(name);
+        const isActive = pair.winner === slotIdx;
+        const btn = el("button", {
+          class: "win-btn" + (isActive ? " active" : ""),
+          style: { "--win-color": color || "var(--muted)" },
+          title: eligible ? `Mark ${name} as winner` : "Pick a team first",
+          ...(eligible ? {} : { disabled: "disabled" }),
+          onclick: () => {
+            pair.winner = isActive ? null : slotIdx;
+            drawSchedule();
+          },
+        });
+        btn.appendChild(el("span", { class: "swatch" }));
+        btn.appendChild(el("span", {}, name || "—"));
+        return btn;
+      }
+
+      DRAFT.matches.forEach((m, ri) => {
+        const head = el("div", { class: "round-edit-head" },
+          el("span", { class: "round-label" }, "Round " + (m.round ?? ri + 1)),
+          el("button", {
+            onclick: () => { DRAFT.matches.splice(ri, 1); renumberRounds(); drawSchedule(); },
+          }, "Remove"),
+        );
+
+        const courtBlocks = [];
+        DRAFT.courts.forEach((courtName, ci) => {
+          // Ensure pairing exists in normalized form.
+          m.pairings[ci] = normalizePairing(m.pairings[ci]);
+          const pair = m.pairings[ci];
+          const isBlank = !pair.teams[0] && !pair.teams[1];
+
+          const row = el("div", { class: "court-row" },
+            el("div", { class: "court-label" }, courtName),
+            makeSlotSelect(pair.teams[0], v => {
+              pair.teams[0] = v;
+              if (pair.winner === 0 && !winnerEligible(v)) pair.winner = null;
+              drawSchedule();
+            }),
+            el("div", { class: "vs-lbl" }, "vs"),
+            makeSlotSelect(pair.teams[1], v => {
+              pair.teams[1] = v;
+              if (pair.winner === 1 && !winnerEligible(v)) pair.winner = null;
+              drawSchedule();
+            }),
+            el("button", {
+              class: "clear-match",
+              title: "Clear this match",
+              ...(isBlank && pair.winner == null ? { disabled: "disabled" } : {}),
+              onclick: () => {
+                pair.teams[0] = ""; pair.teams[1] = ""; pair.winner = null;
+                drawSchedule();
+              },
+            }, "×"),
+          );
+          courtBlocks.push(row);
+
+          // Winner picker row — only useful when at least one slot has a real team.
+          if (winnerEligible(pair.teams[0]) || winnerEligible(pair.teams[1])) {
+            const winnerRow = el("div", { class: "winner-row" },
+              el("span", { class: "winner-label" }, "Winner"),
+              makeWinBtn(pair, 0),
+              makeWinBtn(pair, 1),
+              el("button", {
+                class: "win-btn win-none",
+                title: "Clear winner",
+                ...(pair.winner == null ? { disabled: "disabled" } : {}),
+                onclick: () => { pair.winner = null; drawSchedule(); },
+              }, "—"),
+            );
+            courtBlocks.push(winnerRow);
+          }
+        });
+        const roundBox = el("div", { class: "round-edit" }, head, ...courtBlocks);
+        schedBody.appendChild(roundBox);
+      });
+
+      const actions = el("div", { class: "sched-actions" },
+        el("button", {
+          class: "add-round",
+          onclick: () => {
+            DRAFT.matches.push({
+              round: DRAFT.matches.length + 1,
+              pairings: DRAFT.courts.map(() => ({ teams: ["", ""], winner: null })),
+            });
+            drawSchedule();
+          },
+        }, "+ Add round"),
+        el("button", {
+          class: "btn ghost danger",
+          onclick: () => {
+            DRAFT.matches.forEach(m => {
+              m.pairings = DRAFT.courts.map(() => ({ teams: ["", ""], winner: null }));
+            });
+            drawSchedule();
+          },
+        }, "Clear all matches"),
+      );
+      schedBody.appendChild(actions);
+    }
+    function isAutoNow() { return DRAFT.matches == null; }
+    function renumberRounds() {
+      DRAFT.matches.forEach((m, i) => m.round = i + 1);
+    }
+
+    drawSchedule();
+    schedSec.appendChild(schedBody);
+    body.appendChild(schedSec);
+
+    // Rules
+    const rulesList = el("div", { class: "rules-list" });
+    function drawRules() {
+      rulesList.innerHTML = "";
+      DRAFT.rules.forEach((rule, i) => {
+        rulesList.appendChild(el("div", { class: "rule-row" },
+          el("input", {
+            type: "text",
+            value: rule,
+            oninput: (e) => DRAFT.rules[i] = e.target.value,
+          }),
+          el("button", {
+            onclick: () => { DRAFT.rules.splice(i, 1); drawRules(); },
+            title: "Remove rule",
+          }, "×"),
+        ));
+      });
+    }
+    drawRules();
+    const rulesSec = el("div", { class: "ed-section" },
+      el("h3", {}, "Rules"),
+      rulesList,
+      el("button", {
+        class: "add-rule",
+        onclick: () => { DRAFT.rules.push(""); drawRules(); },
+      }, "+ Add rule"),
+    );
+    body.appendChild(rulesSec);
+  }
+
+  function commitSave() {
+    // Trim empty trailing roster slots are fine — UI pads to 6. Just clean nulls.
+    DRAFT.teams.forEach(t => {
+      t.roster = t.roster.map(n => (n ?? "").trim());
+    });
+    DRAFT.rules = DRAFT.rules.map(r => r.trim()).filter(Boolean);
+    DRAFT.courts = DRAFT.courts.map(c => c.trim() || "Court");
+    CONFIG = structuredClone(DRAFT);
+    saveConfig(CONFIG);
+    closeEditor();
+    render();
+  }
+
+  function commitReset() {
+    if (!confirm("Reset to the defaults baked into the HTML file?")) return;
+    clearConfig();
+    CONFIG = loadConfig();
+    closeEditor();
+    render();
+  }
+
+  // ============ WIRE UP ============
+  $("#editBtn").addEventListener("click", openEditor);
+  $("#closeEditor").addEventListener("click", closeEditor);
+  $("#cancelBtn").addEventListener("click", closeEditor);
+  $("#editorOverlay").addEventListener("click", closeEditor);
+  $("#saveBtn").addEventListener("click", commitSave);
+  $("#resetBtn").addEventListener("click", commitReset);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("#editor").classList.contains("open")) closeEditor();
+  });
+
+  render();
+</script>
+</body>
+</html>
