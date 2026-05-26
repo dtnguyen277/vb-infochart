@@ -384,12 +384,12 @@ const DEFAULT_CONFIG = {
     z-index: 10;
     width: 4.2vh; height: 4.2vh;
     display: inline-flex; align-items: center; justify-content: center;
-    background: rgba(255,255,255,0.04);
-    color: var(--muted);
+    background: rgba(255,255,255,0.12);
+    color: var(--text);
     border: 1px solid var(--border);
     border-radius: 50%;
     cursor: pointer;
-    opacity: 0.25;
+    opacity: 0.6;
     transition: opacity 0.2s, color 0.2s, background 0.2s, transform 0.2s;
     font-family: inherit;
     padding: 0;
@@ -397,7 +397,7 @@ const DEFAULT_CONFIG = {
   .edit-btn:hover {
     opacity: 1;
     color: var(--text);
-    background: rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.2);
     transform: scale(1.05);
   }
   .edit-btn svg { width: 2vh; height: 2vh; display: block; }
@@ -743,20 +743,41 @@ const DEFAULT_CONFIG = {
     .panel-head { margin-bottom: 10px; }
     .panel-title { font-size: 12px; }
 
-    .schedule { gap: 6px 10px; }
+    .schedule { gap: 8px 10px; }
     .sched-cell { font-size: 13px; padding: 6px 2px; }
     .sched-head { font-size: 10px; padding-bottom: 6px; }
-    .sched-round { font-size: 13px; min-width: 32px; }
-    .match { gap: 4px; flex-wrap: wrap; }
-    .match .team-chip { font-size: 13px; padding: 3px 6px; gap: 4px; border-radius: 5px; }
+    .sched-round { font-size: 13px; min-width: 28px; align-self: center; }
+    /* Stack each match vertically so chips never wrap mid-name. */
+    .sched-cell.match {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 3px;
+      padding: 6px 0;
+    }
+    .match .team-chip,
+    .match .tbd-chip,
+    .match .blank.clickable {
+      width: 100%;
+      justify-content: flex-start;
+    }
+    .match .team-chip { font-size: 13px; padding: 4px 8px; gap: 6px; border-radius: 5px; }
     .match .team-chip .team-dot { width: 7px; height: 7px; }
     .match .team-chip.winner { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--team-color, var(--accent)) 28%, transparent); }
-    .match .vs { font-size: 10px; }
+    .match .vs {
+      font-size: 9px;
+      text-align: center;
+      align-self: center;
+      letter-spacing: 0.18em;
+    }
     .match .trophy { font-size: 12px; }
-    .match .tbd-chip { font-size: 11px; padding: 3px 6px; }
+    .match .tbd-chip { font-size: 11px; padding: 4px 8px; }
     .match .blank { font-size: 14px; }
-    .match .blank.clickable { font-size: 14px; padding: 2px 8px; border-radius: 5px; }
-    .match .clear-match-btn { width: 20px; height: 20px; font-size: 13px; border-radius: 4px; }
+    .match .blank.clickable { font-size: 14px; padding: 3px 8px; border-radius: 5px; }
+    .match .clear-match-btn {
+      width: 22px; height: 22px; font-size: 13px; border-radius: 4px;
+      align-self: flex-end;
+      margin-left: 0;
+    }
 
     .rules { gap: 8px; }
     .rules li { font-size: 13px; padding-left: 14px; line-height: 1.4; }
