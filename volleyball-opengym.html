@@ -1272,7 +1272,7 @@ const DEFAULT_CONFIG = {
       const opts = [
         { value: "", label: "— blank —", color: "" },
         { value: "TBD", label: "TBD", color: "" },
-        ...DRAFT.teams.map(t => ({ value: t.name, label: "● " + t.name, color: t.color })),
+        ...DRAFT.teams.map(t => ({ value: t.name, label: t.name, color: t.color })),
       ];
       for (const o of opts) {
         const opt = el("option", { value: o.value }, o.label);
