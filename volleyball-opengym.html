@@ -495,13 +495,50 @@ const DEFAULT_CONFIG = {
   .editor-foot .left { display: flex; gap: 8px; }
   .editor-foot .right { display: flex; gap: 8px; }
 
-  .ed-section { margin-bottom: 22px; }
-  .ed-section h3 {
-    margin: 0 0 10px;
+  .ed-section {
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .ed-section > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 12px 14px;
     font-size: 11px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.12em;
     color: var(--muted);
+    user-select: none;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px;
+    transition: color 0.15s, background 0.15s;
   }
+  .ed-section > summary::-webkit-details-marker { display: none; }
+  .ed-section > summary::after {
+    content: "";
+    width: 8px; height: 8px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 0.15s;
+    flex-shrink: 0;
+    margin-right: 2px;
+  }
+  .ed-section[open] > summary {
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+  }
+  .ed-section[open] > summary::after {
+    transform: rotate(45deg);
+  }
+  .ed-section > summary:hover { color: var(--text); }
+  .ed-section > *:not(summary) {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .ed-section > *:nth-child(2) { padding-top: 14px; }
+  .ed-section > *:last-child:not(summary) { padding-bottom: 14px; }
   .ed-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
   .ed-row label { width: 80px; font-size: 12px; color: var(--muted); }
   .ed-row input[type="text"], .ed-row input[type="color"] {
@@ -1411,8 +1448,8 @@ const DEFAULT_CONFIG = {
     body.innerHTML = "";
 
     // Session
-    const sessionSec = el("div", { class: "ed-section" },
-      el("h3", {}, "Session"),
+    const sessionSec = el("details", { class: "ed-section", open: "" },
+      el("summary", {}, "Session"),
       el("div", { class: "ed-row" },
         el("label", {}, "Title"),
         input(DRAFT.sessionTitle, v => DRAFT.sessionTitle = v)),
@@ -1426,7 +1463,7 @@ const DEFAULT_CONFIG = {
     body.appendChild(sessionSec);
 
     // Courts
-    const courtsSec = el("div", { class: "ed-section" }, el("h3", {}, "Courts"));
+    const courtsSec = el("details", { class: "ed-section" }, el("summary", {}, "Courts"));
     DRAFT.courts.forEach((c, i) => {
       courtsSec.appendChild(el("div", { class: "ed-row" },
         el("label", {}, "Court " + (i + 1)),
@@ -1435,7 +1472,7 @@ const DEFAULT_CONFIG = {
     body.appendChild(courtsSec);
 
     // Teams
-    const teamsSec = el("div", { class: "ed-section" }, el("h3", {}, "Teams & Rosters"));
+    const teamsSec = el("details", { class: "ed-section" }, el("summary", {}, "Teams & Rosters"));
     DRAFT.teams.forEach((team, ti) => {
       const rosterInputs = el("div", { class: "roster-grid" });
       for (let ri = 0; ri < 6; ri++) {
@@ -1474,7 +1511,7 @@ const DEFAULT_CONFIG = {
     body.appendChild(teamsSec);
 
     // Schedule
-    const schedSec = el("div", { class: "ed-section" }, el("h3", {}, "Match Schedule"));
+    const schedSec = el("details", { class: "ed-section" }, el("summary", {}, "Match Schedule"));
     const schedBody = el("div", {});
     const isAuto = DRAFT.matches == null;
 
@@ -1709,8 +1746,8 @@ const DEFAULT_CONFIG = {
       });
     }
     drawRules();
-    const rulesSec = el("div", { class: "ed-section" },
-      el("h3", {}, "Rules"),
+    const rulesSec = el("details", { class: "ed-section" },
+      el("summary", {}, "Rules"),
       rulesList,
       el("button", {
         class: "add-rule",
@@ -1802,8 +1839,8 @@ const DEFAULT_CONFIG = {
       },
     }, "Refresh");
 
-    const ioSec = el("div", { class: "ed-section io-section" },
-      el("h3", {}, "Import / Export"),
+    const ioSec = el("details", { class: "ed-section io-section" },
+      el("summary", {}, "Import / Export"),
       el("div", { class: "io-hint" },
         "JSON of the current draft. Edit here and Load to replace, or Copy to share."),
       ioTextarea,
