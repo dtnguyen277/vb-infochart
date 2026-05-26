@@ -138,10 +138,9 @@ const DEFAULT_CONFIG = {
     line-height: 1;
   }
   .team-wins .wins-label {
-    font-size: 1.4vh; font-weight: 700;
-    opacity: 0.75;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    font-size: 2vh;
+    line-height: 1;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.4));
   }
   .roster {
     display: flex; flex-direction: column;
@@ -736,8 +735,8 @@ const DEFAULT_CONFIG = {
         el("div", { class: "team-header" },
           el("span", { class: "team-name" }, t.name),
           el("span", { class: "team-wins", title: `${wins[t.name] ?? 0} win${(wins[t.name] ?? 0) === 1 ? "" : "s"}` },
+            el("span", { class: "wins-label" }, "🏆"),
             el("span", { class: "wins-num" }, String(wins[t.name] ?? 0)),
-            el("span", { class: "wins-label" }, "W"),
           ),
         ),
         roster
