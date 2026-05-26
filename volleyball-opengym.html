@@ -660,6 +660,35 @@ const DEFAULT_CONFIG = {
   .btn.danger { background: transparent; color: #f87171; border: 1px solid #7f1d1d; }
   .btn:hover { filter: brightness(1.05); }
 
+  /* Import / Export */
+  .io-section textarea {
+    width: 100%;
+    height: 180px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font: 12px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace;
+    resize: vertical;
+    white-space: pre;
+    overflow: auto;
+  }
+  .io-actions {
+    display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;
+  }
+  .io-status {
+    font-size: 11px; margin-top: 8px;
+    min-height: 14px;
+    color: var(--muted);
+  }
+  .io-status.ok  { color: #4ade80; }
+  .io-status.err { color: #f87171; }
+  .io-hint {
+    font-size: 11px; color: var(--muted);
+    margin-bottom: 6px;
+  }
+
   @media print { .edit-btn, .editor-overlay, .editor { display: none !important; } }
 </style>
 </head>
@@ -735,6 +764,7 @@ const DEFAULT_CONFIG = {
   let DRAFT = null; // working copy while editor is open
   let mainEditMode = false; // when true, clicks on chips open team picker instead of toggling winner
   let activePicker = null;
+  let pendingIoStatus = null; // {msg, kind} surviving across renderEditor() calls
 
   function materializeMatchesIfAuto() {
     if (CONFIG.matches != null) return;
@@ -1056,6 +1086,7 @@ const DEFAULT_CONFIG = {
   }
   function closeEditor() {
     DRAFT = null;
+    pendingIoStatus = null;
     $("#editor").classList.remove("open");
     $("#editorOverlay").classList.remove("open");
   }
@@ -1355,6 +1386,99 @@ const DEFAULT_CONFIG = {
       }, "+ Add rule"),
     );
     body.appendChild(rulesSec);
+
+    // Import / Export
+    const ioStatus = el("div", { class: "io-status" });
+    function setStatus(msg, kind) {
+      pendingIoStatus = msg ? { msg, kind } : null;
+      ioStatus.textContent = msg || "";
+      ioStatus.className = "io-status" + (kind ? " " + kind : "");
+    }
+    // Restore any status from a previous render (e.g. after Load redraws the editor).
+    if (pendingIoStatus) {
+      ioStatus.textContent = pendingIoStatus.msg;
+      ioStatus.className = "io-status " + (pendingIoStatus.kind || "");
+    }
+    const ioTextarea = el("textarea", {
+      spellcheck: "false",
+      autocomplete: "off",
+      autocapitalize: "off",
+      autocorrect: "off",
+    });
+    function refreshIoTextarea() {
+      ioTextarea.value = JSON.stringify(DRAFT, null, 2);
+    }
+    refreshIoTextarea();
+
+    const copyBtn = el("button", {
+      class: "btn ghost",
+      onclick: async () => {
+        refreshIoTextarea();
+        try {
+          await navigator.clipboard.writeText(ioTextarea.value);
+          setStatus("Copied current draft to clipboard.", "ok");
+        } catch (err) {
+          ioTextarea.focus();
+          ioTextarea.select();
+          setStatus("Copy blocked — text is selected; press Ctrl+C.", "err");
+        }
+      },
+    }, "Copy to clipboard");
+
+    const loadBtn = el("button", {
+      class: "btn ghost",
+      onclick: () => {
+        let parsed;
+        try {
+          parsed = JSON.parse(ioTextarea.value);
+        } catch (err) {
+          setStatus("Parse error: " + err.message, "err");
+          return;
+        }
+        if (!parsed || typeof parsed !== "object") {
+          setStatus("Expected a JSON object.", "err"); return;
+        }
+        if (!Array.isArray(parsed.teams) || parsed.teams.length === 0) {
+          setStatus("Missing or empty 'teams' array.", "err"); return;
+        }
+        if (!Array.isArray(parsed.courts) || parsed.courts.length === 0) {
+          setStatus("Missing or empty 'courts' array.", "err"); return;
+        }
+        // Sanitize: ensure each team has name, color, roster.
+        parsed.teams = parsed.teams.map((t, i) => ({
+          name: String(t?.name ?? "Team " + (i + 1)),
+          color: String(t?.color ?? "#888888"),
+          roster: Array.isArray(t?.roster) ? t.roster.map(n => String(n ?? "")) : [],
+        }));
+        parsed.courts = parsed.courts.map(c => String(c ?? ""));
+        parsed.rules = Array.isArray(parsed.rules) ? parsed.rules.map(r => String(r ?? "")) : [];
+        parsed.sessionTitle = String(parsed.sessionTitle ?? "Open Gym");
+        parsed.date = String(parsed.date ?? "");
+        parsed.subtitle = String(parsed.subtitle ?? "");
+        normalizeConfig(parsed);
+        DRAFT = parsed;
+        setStatus("Loaded into draft — review and Save to apply.", "ok");
+        renderEditor();
+      },
+    }, "Load from textarea");
+
+    const refreshBtn = el("button", {
+      class: "btn ghost",
+      onclick: () => {
+        refreshIoTextarea();
+        setStatus("Refreshed textarea from current draft.", "ok");
+      },
+    }, "Refresh");
+
+    const ioSec = el("div", { class: "ed-section io-section" },
+      el("h3", {}, "Import / Export"),
+      el("div", { class: "io-hint" },
+        "JSON of the current draft. Edit here and Load to replace, or Copy to share."),
+      ioTextarea,
+      el("div", { class: "io-actions" }, copyBtn, loadBtn, refreshBtn),
+      ioStatus,
+    );
+    body.appendChild(ioSec);
   }
 
   function commitSave() {
