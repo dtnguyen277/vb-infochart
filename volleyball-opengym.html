@@ -19,6 +19,12 @@ const DEFAULT_CONFIG = {
   date: "May 25, 2026",
   subtitle: "",                  // optional: "7:00 - 9:00 PM" etc.
 
+  // Schedule mode:
+  //   "round-robin" — 3 rounds, each team plays each other once
+  //   "king"        — Round 1 fixed; later rounds = winners on Court 1, losers on Court 2
+  //   "manual"      — pairings fully under user control
+  scheduleMode: "round-robin",
+
   courts: ["Close Court", "Far Court"],
 
   teams: [
@@ -197,9 +203,12 @@ const DEFAULT_CONFIG = {
     text-transform: uppercase; letter-spacing: 0.1em;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
-  .edit-lineups-btn:hover { color: var(--text); border-color: var(--text); }
+  .edit-lineups-btn:hover:not(:disabled) { color: var(--text); border-color: var(--text); }
   .edit-lineups-btn.active {
     background: var(--accent); color: #0b0f17; border-color: var(--accent);
+  }
+  .edit-lineups-btn:disabled, .edit-lineups-btn.disabled {
+    opacity: 0.4; cursor: not-allowed;
   }
 
   /* ---------- SCHEDULE ---------- */
@@ -526,12 +535,43 @@ const DEFAULT_CONFIG = {
   .add-rule, .add-round { align-self: flex-start; margin-top: 6px; font-size: 12px; }
 
   /* Schedule editor */
-  .auto-toggle {
-    display: flex; align-items: center; gap: 8px;
+  .mode-picker {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
     margin-bottom: 12px;
-    font-size: 13px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
   }
-  .auto-toggle input { margin: 0; }
+  .mode-btn {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 8px 6px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .mode-btn:hover { color: var(--text); }
+  .mode-btn.active {
+    background: var(--panel-2);
+    color: var(--text);
+    border-color: var(--border);
+  }
+  .mode-explainer {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 4px 2px;
+    font-style: italic;
+  }
   .round-edit {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -848,7 +888,102 @@ const DEFAULT_CONFIG = {
   }
   function normalizeConfig(cfg) {
     cfg.matches = normalizeMatches(cfg.matches);
+    // Backward-compat: if scheduleMode missing, infer from matches.
+    if (cfg.scheduleMode !== "round-robin" && cfg.scheduleMode !== "king" && cfg.scheduleMode !== "manual") {
+      cfg.scheduleMode = cfg.matches == null ? "round-robin" : "manual";
+    }
     return cfg;
+  }
+
+  const SCHEDULE_MODES = ["round-robin", "king", "manual"];
+  const SCHEDULE_MODE_LABELS = {
+    "round-robin": "Round robin",
+    "king":        "King of the court",
+    "manual":      "Manual",
+  };
+  function getScheduleMode() {
+    return SCHEDULE_MODES.includes(CONFIG.scheduleMode)
+      ? CONFIG.scheduleMode
+      : "round-robin";
+  }
+
+  // Build an explicit matches array from the current round-robin schedule.
+  function materializeFromRoundRobin() {
+    return generateRoundRobin(CONFIG.teams).map(m => ({
+      round: m.round,
+      pairings: m.pairings.map(p => ({ teams: [...p.teams], winner: null })),
+    }));
+  }
+
+  // Initial King of the Court schedule: 3 rounds, Round 1 = T1 vs T2 / T3 vs T4,
+  // Rounds 2+ filled with TBD until prior winners are set.
+  function buildKingInitial(numRounds = 3) {
+    const names = CONFIG.teams.map(t => t.name);
+    const [a, b, c, d] = [names[0] ?? "TBD", names[1] ?? "TBD", names[2] ?? "TBD", names[3] ?? "TBD"];
+    const out = [{
+      round: 1,
+      pairings: [
+        { teams: [a, b], winner: null },
+        { teams: [c, d], winner: null },
+      ],
+    }];
+    for (let r = 2; r <= numRounds; r++) {
+      out.push({
+        round: r,
+        pairings: [
+          { teams: ["TBD", "TBD"], winner: null },
+          { teams: ["TBD", "TBD"], winner: null },
+        ],
+      });
+    }
+    return out;
+  }
+
+  // Walk through king-of-the-court rounds and rewrite each later round's
+  // pairings based on the previous round's winners/losers. If a later round's
+  // expected teams change, its winner is cleared.
+  function recomputeKingDownstream() {
+    if (getScheduleMode() !== "king" || !CONFIG.matches) return;
+    for (let i = 0; i < CONFIG.matches.length - 1; i++) {
+      const curr = CONFIG.matches[i];
+      const next = CONFIG.matches[i + 1];
+      const [p0, p1] = curr.pairings;
+      let newC1, newC2;
+      if (p0.winner == null || p1.winner == null) {
+        newC1 = ["TBD", "TBD"];
+        newC2 = ["TBD", "TBD"];
+      } else {
+        const c1w = p0.teams[p0.winner];
+        const c1l = p0.teams[1 - p0.winner];
+        const c2w = p1.teams[p1.winner];
+        const c2l = p1.teams[1 - p1.winner];
+        newC1 = [c1w, c2w];
+        newC2 = [c1l, c2l];
+      }
+      const same = (a, b) => a[0] === b[0] && a[1] === b[1];
+      if (!same(newC1, next.pairings[0].teams)) {
+        next.pairings[0] = { teams: newC1, winner: null };
+      }
+      if (!same(newC2, next.pairings[1].teams)) {
+        next.pairings[1] = { teams: newC2, winner: null };
+      }
+    }
+  }
+
+  function setScheduleMode(newMode) {
+    const old = getScheduleMode();
+    if (old === newMode) return;
+    CONFIG.scheduleMode = newMode;
+    if (newMode === "round-robin") {
+      // Drop stored matches so the view recomputes from teams.
+      CONFIG.matches = null;
+    } else if (newMode === "king") {
+      CONFIG.matches = buildKingInitial();
+    } else if (newMode === "manual") {
+      // Keep existing matches if any, otherwise materialize round-robin as a seed.
+      if (CONFIG.matches == null) CONFIG.matches = materializeFromRoundRobin();
+    }
+    saveConfig(CONFIG);
   }
 
   function loadConfig() {
@@ -871,10 +1006,11 @@ const DEFAULT_CONFIG = {
 
   function materializeMatchesIfAuto() {
     if (CONFIG.matches != null) return;
-    CONFIG.matches = generateRoundRobin(CONFIG.teams).map(m => ({
-      round: m.round,
-      pairings: m.pairings.map(p => ({ teams: [...p.teams], winner: null })),
-    }));
+    if (getScheduleMode() === "king") {
+      CONFIG.matches = buildKingInitial();
+    } else {
+      CONFIG.matches = materializeFromRoundRobin();
+    }
   }
 
   function setSlotValue(roundIdx, pairingIdx, slotIdx, value) {
@@ -883,6 +1019,7 @@ const DEFAULT_CONFIG = {
     CONFIG.matches[roundIdx].pairings[pairingIdx] = pair;
     pair.teams[slotIdx] = value;
     if (pair.winner === slotIdx && (!value || value === "TBD")) pair.winner = null;
+    recomputeKingDownstream();
     saveConfig(CONFIG);
     render();
   }
@@ -890,6 +1027,7 @@ const DEFAULT_CONFIG = {
   function clearMatchFromMain(roundIdx, pairingIdx) {
     materializeMatchesIfAuto();
     CONFIG.matches[roundIdx].pairings[pairingIdx] = { teams: ["TBD", "TBD"], winner: null };
+    recomputeKingDownstream();
     saveConfig(CONFIG);
     render();
   }
@@ -1050,6 +1188,7 @@ const DEFAULT_CONFIG = {
     const pair = normalizePairing(CONFIG.matches[roundIdx].pairings[pairingIdx]);
     CONFIG.matches[roundIdx].pairings[pairingIdx] = pair;
     pair.winner = pair.winner === slotIdx ? null : slotIdx;
+    recomputeKingDownstream();
     saveConfig(CONFIG);
     render();
   }
@@ -1145,12 +1284,19 @@ const DEFAULT_CONFIG = {
       }
     });
 
+    const mode = getScheduleMode();
+    const canEditLineups = mode === "manual";
     return el("section", { class: "panel" },
       el("div", { class: "panel-head" },
         el("div", { class: "panel-title" }, "Match Schedule"),
         el("button", {
-          class: "edit-lineups-btn" + (editing ? " active" : ""),
+          class: "edit-lineups-btn" + (editing ? " active" : "") + (canEditLineups ? "" : " disabled"),
+          title: canEditLineups
+            ? (editing ? "Stop editing" : "Edit team lineups")
+            : "Switch schedule mode to Manual in the editor to edit lineups",
+          ...(canEditLineups ? {} : { disabled: "disabled" }),
           onclick: () => {
+            if (!canEditLineups) return;
             mainEditMode = !mainEditMode;
             closeTeamPicker();
             render();
@@ -1317,34 +1463,61 @@ const DEFAULT_CONFIG = {
 
     function drawSchedule() {
       schedBody.innerHTML = "";
-      const toggle = el("label", { class: "auto-toggle" },
-        el("input", {
-          type: "checkbox",
-          ...(isAutoNow() ? { checked: "checked" } : {}),
-          onchange: (e) => {
-            if (e.target.checked) {
+
+      const currentMode = DRAFT.scheduleMode || "round-robin";
+      const modePicker = el("div", { class: "mode-picker" });
+      for (const m of SCHEDULE_MODES) {
+        const isActive = currentMode === m;
+        modePicker.appendChild(el("button", {
+          class: "mode-btn" + (isActive ? " active" : ""),
+          onclick: () => {
+            DRAFT.scheduleMode = m;
+            // Apply same transitions setScheduleMode does, but on DRAFT.
+            if (m === "round-robin") {
               DRAFT.matches = null;
-            } else {
-              // Materialize current auto schedule as editable copy.
-              const seed = generateRoundRobin(DRAFT.teams);
-              DRAFT.matches = seed.map(m => ({
-                round: m.round,
-                pairings: m.pairings.map(p => ({ teams: [...p.teams], winner: null })),
-              }));
+            } else if (m === "king") {
+              const names = DRAFT.teams.map(t => t.name);
+              const [a, b, c, d] = [names[0] ?? "TBD", names[1] ?? "TBD", names[2] ?? "TBD", names[3] ?? "TBD"];
+              DRAFT.matches = [
+                { round: 1, pairings: [
+                  { teams: [a, b], winner: null },
+                  { teams: [c, d], winner: null },
+                ]},
+                { round: 2, pairings: [
+                  { teams: ["TBD","TBD"], winner: null },
+                  { teams: ["TBD","TBD"], winner: null },
+                ]},
+                { round: 3, pairings: [
+                  { teams: ["TBD","TBD"], winner: null },
+                  { teams: ["TBD","TBD"], winner: null },
+                ]},
+              ];
+            } else if (m === "manual") {
+              if (!DRAFT.matches) {
+                const seed = generateRoundRobin(DRAFT.teams);
+                DRAFT.matches = seed.map(mm => ({
+                  round: mm.round,
+                  pairings: mm.pairings.map(p => ({ teams: [...p.teams], winner: null })),
+                }));
+              }
             }
             drawSchedule();
           },
-        }),
-        el("span", {}, "Auto-generate round-robin from teams"),
-      );
-      schedBody.appendChild(toggle);
+        }, SCHEDULE_MODE_LABELS[m]));
+      }
+      schedBody.appendChild(modePicker);
 
-      if (isAutoNow()) {
-        schedBody.appendChild(el("div", {
-          style: { color: "var(--muted)", fontSize: "12px", fontStyle: "italic" }
-        }, "Schedule is generated automatically. Uncheck to customize."));
+      if (currentMode === "round-robin") {
+        schedBody.appendChild(el("div", { class: "mode-explainer" },
+          "Each team plays every other team once over 3 rounds. Pairings are auto-derived from the team list."));
         return;
       }
+      if (currentMode === "king") {
+        schedBody.appendChild(el("div", { class: "mode-explainer" },
+          "Round 1: Team 1 vs Team 2 on Close Court, Team 3 vs Team 4 on Far Court. After each round, winners face each other on Close Court and losers face each other on Far Court."));
+        return;
+      }
+      // manual — fall through to the editable schedule below
 
       function winnerEligible(value) {
         return value && value !== "TBD";
@@ -1592,6 +1765,8 @@ const DEFAULT_CONFIG = {
     DRAFT.rules = DRAFT.rules.map(r => r.trim()).filter(Boolean);
     DRAFT.courts = DRAFT.courts.map(c => c.trim() || "Court");
     CONFIG = structuredClone(DRAFT);
+    // If we left manual mode, leave any in-progress lineup editing too.
+    if (getScheduleMode() !== "manual") mainEditMode = false;
     saveConfig(CONFIG);
     closeEditor();
     render();
