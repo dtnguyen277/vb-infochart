@@ -19,7 +19,7 @@ const DEFAULT_CONFIG = {
   date: "May 25, 2026",
   subtitle: "",                  // optional: "7:00 - 9:00 PM" etc.
 
-  courts: ["Court 1", "Court 2"],
+  courts: ["Close Court", "Far Court"],
 
   teams: [
     { name: "Red",    color: "#ef4444", roster: ["Alice","Ben","Chris","Dana","Eli","Evan"] },
@@ -32,11 +32,9 @@ const DEFAULT_CONFIG = {
   matches: null,
 
   rules: [
-    "Rally scoring to 25, win by 2",
-    "Best of 3 sets per match",
-    "Switch courts after each match",
-    "Rotate servers every 5 points",
-    "Self-ref — call your own touches and lines",
+    "Sets to 21, cap 23",
+    "King of the court",
+    "3 min rest between sets",
   ],
 };
 </script>
@@ -831,13 +829,13 @@ const DEFAULT_CONFIG = {
   const STORAGE_KEY = "vb-opengym-config";
 
   // Normalize a pairing to { teams: [a, b], winner: null | 0 | 1 }.
-  // Accepts legacy array shape [a, b].
+  // Accepts legacy array shape [a, b]. Empty slots are migrated to "TBD".
   function normalizePairing(p) {
-    if (!p) return { teams: ["", ""], winner: null };
-    if (Array.isArray(p)) return { teams: [p[0] ?? "", p[1] ?? ""], winner: null };
-    const teams = [p.teams?.[0] ?? "", p.teams?.[1] ?? ""];
+    const slot = v => (!v ? "TBD" : v);
+    if (!p) return { teams: ["TBD", "TBD"], winner: null };
+    if (Array.isArray(p)) return { teams: [slot(p[0]), slot(p[1])], winner: null };
+    const teams = [slot(p.teams?.[0]), slot(p.teams?.[1])];
     const w = (p.winner === 0 || p.winner === 1) ? p.winner : null;
-    // Winner must point to a real team (not blank or TBD).
     const valid = w !== null && teams[w] && teams[w] !== "TBD";
     return { teams, winner: valid ? w : null };
   }
@@ -891,7 +889,7 @@ const DEFAULT_CONFIG = {
 
   function clearMatchFromMain(roundIdx, pairingIdx) {
     materializeMatchesIfAuto();
-    CONFIG.matches[roundIdx].pairings[pairingIdx] = { teams: ["", ""], winner: null };
+    CONFIG.matches[roundIdx].pairings[pairingIdx] = { teams: ["TBD", "TBD"], winner: null };
     saveConfig(CONFIG);
     render();
   }
@@ -914,7 +912,6 @@ const DEFAULT_CONFIG = {
     closeTeamPicker();
     const picker = el("div", { class: "team-picker" });
     const opts = [
-      { value: "", label: "— blank —", color: null, cls: "" },
       { value: "TBD", label: "TBD", color: null, cls: "tbd-row" },
       ...CONFIG.teams.map(t => ({ value: t.name, label: t.name, color: t.color, cls: "has-color" })),
     ];
@@ -1294,7 +1291,6 @@ const DEFAULT_CONFIG = {
     function makeSlotSelect(currentValue, onChange) {
       const sel = el("select", {});
       const opts = [
-        { value: "", label: "— blank —", color: "" },
         { value: "TBD", label: "TBD", color: "" },
         ...DRAFT.teams.map(t => ({ value: t.name, label: t.name, color: t.color })),
       ];
@@ -1386,7 +1382,7 @@ const DEFAULT_CONFIG = {
           // Ensure pairing exists in normalized form.
           m.pairings[ci] = normalizePairing(m.pairings[ci]);
           const pair = m.pairings[ci];
-          const isBlank = !pair.teams[0] && !pair.teams[1];
+          const isCleared = pair.teams[0] === "TBD" && pair.teams[1] === "TBD" && pair.winner == null;
 
           const row = el("div", { class: "court-row" },
             el("div", { class: "court-label" }, courtName),
@@ -1404,9 +1400,9 @@ const DEFAULT_CONFIG = {
             el("button", {
               class: "clear-match",
               title: "Clear this match",
-              ...(isBlank && pair.winner == null ? { disabled: "disabled" } : {}),
+              ...(isCleared ? { disabled: "disabled" } : {}),
               onclick: () => {
-                pair.teams[0] = ""; pair.teams[1] = ""; pair.winner = null;
+                pair.teams[0] = "TBD"; pair.teams[1] = "TBD"; pair.winner = null;
                 drawSchedule();
               },
             }, "×"),
@@ -1439,7 +1435,7 @@ const DEFAULT_CONFIG = {
           onclick: () => {
             DRAFT.matches.push({
               round: DRAFT.matches.length + 1,
-              pairings: DRAFT.courts.map(() => ({ teams: ["", ""], winner: null })),
+              pairings: DRAFT.courts.map(() => ({ teams: ["TBD", "TBD"], winner: null })),
             });
             drawSchedule();
           },
@@ -1448,7 +1444,7 @@ const DEFAULT_CONFIG = {
           class: "btn ghost danger",
           onclick: () => {
             DRAFT.matches.forEach(m => {
-              m.pairings = DRAFT.courts.map(() => ({ teams: ["", ""], winner: null }));
+              m.pairings = DRAFT.courts.map(() => ({ teams: ["TBD", "TBD"], winner: null }));
             });
             drawSchedule();
           },
