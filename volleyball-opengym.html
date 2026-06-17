@@ -168,7 +168,7 @@ const DEFAULT_CONFIG = {
   /* ---------- BOTTOM ROW: SCHEDULE + RULES ---------- */
   .bottom {
     display: grid;
-    grid-template-columns: 2fr 3fr;
+    grid-template-columns: 1fr 3.2fr;
     gap: 1.2vw;
     min-height: 0;
   }
@@ -240,6 +240,41 @@ const DEFAULT_CONFIG = {
   .match .vs {
     color: var(--muted); font-weight: 500; font-size: 1.8vh;
     text-transform: uppercase; letter-spacing: 0.12em;
+  }
+  .match .vs.clickable {
+    cursor: pointer;
+    border: 1px dashed transparent;
+    border-radius: 0.6vh;
+    padding: 0.2vh 0.6vw;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .match .vs.clickable:hover { color: var(--text); border-color: var(--border); }
+
+  /* Final score sits where the "vs" would be — winner's number stands out. */
+  .match .score-box {
+    display: inline-flex; align-items: baseline;
+    gap: 0.4vw;
+    padding: 0.2vh 0.8vw;
+    border-radius: 0.7vh;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .match .score-box.clickable { cursor: pointer; transition: border-color 0.12s, background 0.12s; }
+  .match .score-box.clickable:hover { border-color: var(--text); background: var(--panel); }
+  .match .score-num {
+    font-size: 2.6vh; font-weight: 800;
+    color: var(--muted);
+  }
+  .match .score-num.win { color: var(--text); }
+  .match .score-dash { font-size: 1.8vh; font-weight: 700; color: var(--muted); }
+
+  /* Vertical divider separating courts in the schedule grid. */
+  .schedule .court-divide {
+    border-left: 2px solid color-mix(in srgb, var(--text) 16%, var(--border));
+    margin-left: -0.6vw;
+    padding-left: 0.6vw;
   }
   .match .team-chip {
     display: inline-flex; align-items: center; gap: 0.5vw;
@@ -389,6 +424,43 @@ const DEFAULT_CONFIG = {
     background: repeating-linear-gradient(45deg, var(--muted) 0 2px, transparent 2px 4px);
     border-color: var(--muted);
   }
+
+  /* ---------- SCORE PICKER POPOVER ---------- */
+  .score-picker { padding: 12px; min-width: 220px; }
+  .score-picker-title {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .score-picker-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px;
+  }
+  .score-picker-row .picker-dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--picker-color, var(--accent));
+    border: 1px solid color-mix(in srgb, var(--picker-color, var(--border)) 60%, var(--border));
+    flex-shrink: 0;
+  }
+  .score-picker-name {
+    flex: 1; min-width: 0;
+    font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .score-input {
+    width: 56px; flex-shrink: 0;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; font: inherit; font-weight: 700;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .score-picker-actions {
+    display: flex; gap: 6px; justify-content: flex-end;
+    margin-top: 4px;
+  }
+  .score-picker-actions .btn { padding: 6px 12px; font-size: 12px; }
 
   /* ---------- RULES ---------- */
   .rules {
@@ -875,6 +947,14 @@ const DEFAULT_CONFIG = {
       align-self: center;
       letter-spacing: 0.18em;
     }
+    .match .vs.clickable { padding: 2px 8px; border-radius: 5px; }
+    .match .score-box {
+      align-self: center;
+      padding: 2px 8px; border-radius: 6px; gap: 4px;
+    }
+    .match .score-num { font-size: 15px; }
+    .match .score-dash { font-size: 11px; }
+    .schedule .court-divide { margin-left: 0; padding-left: 5px; }
     .match .trophy { font-size: 12px; }
     .match .tbd-chip { font-size: 11px; padding: 4px 8px; }
     .match .blank { font-size: 14px; }
@@ -934,16 +1014,30 @@ const DEFAULT_CONFIG = {
   // ============ STATE ============
   const STORAGE_KEY = "vb-opengym-config";
 
-  // Normalize a pairing to { teams: [a, b], winner: null | 0 | 1 }.
+  // Coerce a value to a finite number, or null. Allows 0; rejects "" / junk.
+  function numOrNull(v) {
+    if (v === "" || v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  // Normalize a final-score pair to [a, b] (numbers/null) or null when empty.
+  function normalizeScores(s) {
+    if (!Array.isArray(s)) return null;
+    const a = numOrNull(s[0]);
+    const b = numOrNull(s[1]);
+    return (a == null && b == null) ? null : [a, b];
+  }
+
+  // Normalize a pairing to { teams: [a, b], winner: null | 0 | 1, scores }.
   // Accepts legacy array shape [a, b]. Empty slots are migrated to "TBD".
   function normalizePairing(p) {
     const slot = v => (!v ? "TBD" : v);
-    if (!p) return { teams: ["TBD", "TBD"], winner: null };
-    if (Array.isArray(p)) return { teams: [slot(p[0]), slot(p[1])], winner: null };
+    if (!p) return { teams: ["TBD", "TBD"], winner: null, scores: null };
+    if (Array.isArray(p)) return { teams: [slot(p[0]), slot(p[1])], winner: null, scores: null };
     const teams = [slot(p.teams?.[0]), slot(p.teams?.[1])];
     const w = (p.winner === 0 || p.winner === 1) ? p.winner : null;
     const valid = w !== null && teams[w] && teams[w] !== "TBD";
-    return { teams, winner: valid ? w : null };
+    return { teams, winner: valid ? w : null, scores: normalizeScores(p.scores) };
   }
   function normalizeMatches(matches) {
     if (matches == null) return null;
@@ -1090,6 +1184,15 @@ const DEFAULT_CONFIG = {
     render();
   }
 
+  function setMatchScore(roundIdx, pairingIdx, scoreA, scoreB) {
+    materializeMatchesIfAuto();
+    const pair = normalizePairing(CONFIG.matches[roundIdx].pairings[pairingIdx]);
+    CONFIG.matches[roundIdx].pairings[pairingIdx] = pair;
+    pair.scores = normalizeScores([scoreA, scoreB]);
+    saveConfig(CONFIG);
+    render();
+  }
+
   function clearMatchFromMain(roundIdx, pairingIdx) {
     materializeMatchesIfAuto();
     CONFIG.matches[roundIdx].pairings[pairingIdx] = { teams: ["TBD", "TBD"], winner: null };
@@ -1162,6 +1265,63 @@ const DEFAULT_CONFIG = {
     setTimeout(() => {
       document.addEventListener("mousedown", outsidePickerHandler, true);
       document.addEventListener("keydown", pickerKeyHandler, true);
+    }, 0);
+  }
+
+  // Popover to set both teams' final score for a match at once.
+  function openScorePicker(anchorEl, pair, onSave) {
+    closeTeamPicker();
+    const picker = el("div", { class: "team-picker score-picker" },
+      el("div", { class: "score-picker-title" }, "Final score"));
+
+    const inputs = [];
+    pair.teams.forEach((name, i) => {
+      const t = teamByName(name);
+      const color = t ? t.color : "var(--accent)";
+      const inp = el("input", {
+        type: "number", inputmode: "numeric", min: "0",
+        value: pair.scores?.[i] == null ? "" : String(pair.scores[i]),
+        placeholder: "0",
+        class: "score-input",
+      });
+      inputs.push(inp);
+      const dot = el("span", { class: "picker-dot", style: { "--picker-color": color } });
+      picker.appendChild(el("label", { class: "score-picker-row" },
+        dot,
+        el("span", { class: "score-picker-name" }, name),
+        inp,
+      ));
+    });
+
+    const save = () => { closeTeamPicker(); onSave(inputs[0].value, inputs[1].value); };
+    picker.appendChild(el("div", { class: "score-picker-actions" },
+      el("button", { class: "btn ghost", type: "button",
+        onclick: (e) => { e.stopPropagation(); closeTeamPicker(); onSave("", ""); } }, "Clear"),
+      el("button", { class: "btn", type: "button",
+        onclick: (e) => { e.stopPropagation(); save(); } }, "Save"),
+    ));
+    picker.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); save(); }
+    });
+    document.body.appendChild(picker);
+
+    const rect = anchorEl.getBoundingClientRect();
+    const pRect = picker.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - pRect.width / 2;
+    let top = rect.bottom + 6;
+    if (left + pRect.width > window.innerWidth - 8) left = window.innerWidth - pRect.width - 8;
+    if (top + pRect.height > window.innerHeight - 8) top = rect.top - pRect.height - 6;
+    if (left < 8) left = 8;
+    if (top < 8) top = 8;
+    picker.style.left = left + "px";
+    picker.style.top = top + "px";
+
+    activePicker = picker;
+    setTimeout(() => {
+      document.addEventListener("mousedown", outsidePickerHandler, true);
+      document.addEventListener("keydown", pickerKeyHandler, true);
+      inputs[0].focus();
+      inputs[0].select();
     }, 0);
   }
 
@@ -1318,7 +1478,8 @@ const DEFAULT_CONFIG = {
       style: { "--court-count": courts.length } });
 
     grid.appendChild(el("div", { class: "sched-head" }, "Round"));
-    for (const c of courts) grid.appendChild(el("div", { class: "sched-head" }, c));
+    courts.forEach((c, ci) =>
+      grid.appendChild(el("div", { class: "sched-head" + (ci > 0 ? " court-divide" : "") }, c)));
 
     matches.forEach((m, ri) => {
       grid.appendChild(el("div", { class: "sched-cell sched-round" }, "R" + m.round));
@@ -1326,13 +1487,15 @@ const DEFAULT_CONFIG = {
         const pair = normalizePairing(m.pairings[i]);
         const [a, b] = pair.teams;
 
+        const divideCls = i > 0 ? " court-divide" : "";
+
         // In broadcast (non-editing) mode, fully-empty matches collapse to a single em-dash.
         if (!editing && !a && !b) {
-          grid.appendChild(el("div", { class: "sched-cell match-blank" }, "—"));
+          grid.appendChild(el("div", { class: "sched-cell match-blank" + divideCls }, "—"));
           continue;
         }
 
-        const cell = el("div", { class: "sched-cell match" });
+        const cell = el("div", { class: "sched-cell match" + divideCls });
 
         function slotClick(slotIdx) {
           return (e) => {
@@ -1353,8 +1516,36 @@ const DEFAULT_CONFIG = {
         const clickB = editing ? slotClick(1) : ((b && b !== "TBD") ? slotClick(1) : null);
 
         const titleOverride = editing ? "Click to change team" : undefined;
+
+        // Center element: the final score (when set) or a "vs". Editable when
+        // both sides hold real teams — clicking opens a score popover. Editing
+        // auto-materializes the schedule, so it works in every mode.
+        const bothReal = a && a !== "TBD" && b && b !== "TBD";
+        const hasScore = pair.scores && (pair.scores[0] != null || pair.scores[1] != null);
+        let center;
+        if (hasScore) {
+          const num = (v, win) => el("span",
+            { class: "score-num" + (win ? " win" : "") },
+            v == null ? "–" : String(v));
+          center = el("span", { class: "score-box" + (bothReal ? " clickable" : "") },
+            num(pair.scores[0], pair.winner === 0),
+            el("span", { class: "score-dash" }, "–"),
+            num(pair.scores[1], pair.winner === 1),
+          );
+        } else {
+          center = el("span", { class: "vs" + (bothReal ? " clickable" : "") }, "vs");
+        }
+        if (bothReal) {
+          center.title = "Click to set the final score";
+          center.onclick = (e) => {
+            e.stopPropagation();
+            openScorePicker(e.currentTarget, pair,
+              (sa, sb) => setMatchScore(ri, i, sa, sb));
+          };
+        }
+
         cell.appendChild(renderSlot(a, pair.winner === 0, clickA, { titleOverride }));
-        cell.appendChild(el("span", { class: "vs" }, "vs"));
+        cell.appendChild(center);
         cell.appendChild(renderSlot(b, pair.winner === 1, clickB, { titleOverride }));
 
         if (editing) {
