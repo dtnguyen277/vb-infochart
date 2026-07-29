@@ -656,6 +656,12 @@ const DEFAULT_CONFIG = {
     border: 1px solid var(--border); border-radius: 6px;
     padding: 6px 10px; font-size: 13px;
   }
+  .color-swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .color-swatch {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid transparent; cursor: pointer; padding: 0;
+  }
+  .color-swatch.active { border-color: var(--text); }
   .roster-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .roster-grid input {
     background: var(--bg);
@@ -1076,6 +1082,7 @@ const DEFAULT_CONFIG = {
 <script>
   // ============ STATE ============
   const POSITIONS = ["S", "OH1", "M", "OPP", "OH2", "L"];
+  const COLOR_PRESETS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899"];
   const STORAGE_KEY = "vb-opengym-config";
 
   // Coerce a value to a finite number, or null. Allows 0; rejects "" / junk.
@@ -1744,16 +1751,38 @@ const DEFAULT_CONFIG = {
           el("span", { class: "roster-pos-label" }, POSITIONS[ri]),
           field));
       }
+      const colorInput = el("input", {
+        type: "color",
+        value: team.color,
+        oninput: (e) => {
+          team.color = e.target.value;
+          card.style.setProperty("--team-color", e.target.value);
+          updateSwatches();
+        },
+      });
+      const swatches = el("div", { class: "color-swatches" });
+      function updateSwatches() {
+        Array.from(swatches.children).forEach(sw => {
+          sw.classList.toggle("active", sw.dataset.color.toLowerCase() === (team.color || "").toLowerCase());
+        });
+      }
+      COLOR_PRESETS.forEach(c => {
+        swatches.appendChild(el("button", {
+          class: "color-swatch",
+          style: { background: c },
+          "data-color": c,
+          title: c,
+          onclick: () => {
+            team.color = c;
+            colorInput.value = c;
+            card.style.setProperty("--team-color", c);
+            updateSwatches();
+          },
+        }));
+      });
       const card = el("div", { class: "team-edit", style: { "--team-color": team.color } },
         el("div", { class: "team-edit-head" },
-          el("input", {
-            type: "color",
-            value: team.color,
-            oninput: (e) => {
-              team.color = e.target.value;
-              card.style.setProperty("--team-color", e.target.value);
-            },
-          }),
+          colorInput,
           el("input", {
             type: "text",
             value: team.name,
@@ -1761,8 +1790,10 @@ const DEFAULT_CONFIG = {
             oninput: (e) => team.name = e.target.value,
           }),
         ),
+        swatches,
         rosterInputs,
       );
+      updateSwatches();
       teamsSec.appendChild(card);
     });
     body.appendChild(teamsSec);
