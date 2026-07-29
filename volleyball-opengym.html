@@ -178,7 +178,7 @@ const DEFAULT_CONFIG = {
     border-radius: 0.6vh;
     padding: 0.2vh 0.4vw;
   }
-  .player-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .player-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ---------- BOTTOM ROW: SCHEDULE + RULES ---------- */
   .bottom {
@@ -523,6 +523,37 @@ const DEFAULT_CONFIG = {
     transform: scale(1.05);
   }
   .edit-btn svg { width: 2vh; height: 2vh; display: block; }
+
+  .shuffle-fab {
+    position: fixed;
+    bottom: 1.6vh; left: 1.6vh;
+    z-index: 10;
+    display: flex; gap: 0.8vh;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+  }
+  .shuffle-fab:hover { opacity: 1; }
+  .shuffle-fab button {
+    display: inline-flex; align-items: center; gap: 0.5vh;
+    background: rgba(255,255,255,0.12);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.8vh 1.6vh;
+    font-family: inherit; font-size: 1.6vh; font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+  .shuffle-fab button:hover { background: rgba(255,255,255,0.2); }
+  .shuffle-fab button:active { transform: scale(0.95); }
+  .shuffle-fab .undo-btn { display: none; }
+  .shuffle-fab .undo-btn.show { display: inline-flex; }
+
+  @keyframes just-shuffled-flash {
+    0%   { opacity: 0.35; transform: translateY(0.6vh); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .teams.just-shuffled .roster { animation: just-shuffled-flash 0.35s ease-out; }
 
   .editor-overlay {
     position: fixed; inset: 0;
@@ -915,7 +946,7 @@ const DEFAULT_CONFIG = {
     margin-bottom: 6px;
   }
 
-  @media print { .edit-btn, .editor-overlay, .editor { display: none !important; } }
+  @media print { .edit-btn, .shuffle-fab, .editor-overlay, .editor { display: none !important; } }
 
   /* ---------- MOBILE ---------- */
   /* On phones / narrow screens, drop the fixed-viewport TV layout and let the
@@ -1070,6 +1101,11 @@ const DEFAULT_CONFIG = {
 
 <div class="stage" id="stage"></div>
 
+<div class="shuffle-fab">
+  <button id="shufflePosBtn" title="Shuffle players within each position (live)">🎲 Positions</button>
+  <button id="shuffleAllBtn" title="Shuffle everyone across all teams (live)">🎲 Everyone</button>
+  <button id="shuffleUndoBtn" class="undo-btn" title="Undo the last shuffle">↩ Undo</button>
+</div>
 <button class="edit-btn" id="editBtn" title="Edit session" aria-label="Edit session">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 20h9"/>
@@ -1280,14 +1316,14 @@ const DEFAULT_CONFIG = {
   }
 
   // Shuffle each position row (index 0..5) independently across all teams.
-  function randomizeByPosition() {
+  function randomizeByPosition(teams) {
     for (let ri = 0; ri < 6; ri++) {
-      const names = DRAFT.teams
+      const names = teams
         .map(t => (t.roster[ri] ?? "").trim())
         .filter(Boolean);
       shuffleInPlace(names);
       let k = 0;
-      DRAFT.teams.forEach(t => {
+      teams.forEach(t => {
         const had = (t.roster[ri] ?? "").trim();
         t.roster[ri] = had ? (names[k++] ?? "") : "";
       });
@@ -1295,9 +1331,9 @@ const DEFAULT_CONFIG = {
   }
 
   // Collect all players, shuffle, refill slots team-by-team, top to bottom.
-  function randomizeFully() {
+  function randomizeFully(teams) {
     const all = [];
-    DRAFT.teams.forEach(t => {
+    teams.forEach(t => {
       for (let ri = 0; ri < 6; ri++) {
         const n = (t.roster[ri] ?? "").trim();
         if (n) all.push(n);
@@ -1305,11 +1341,50 @@ const DEFAULT_CONFIG = {
     });
     shuffleInPlace(all);
     let k = 0;
-    DRAFT.teams.forEach(t => {
+    teams.forEach(t => {
       for (let ri = 0; ri < 6; ri++) {
         t.roster[ri] = k < all.length ? all[k++] : "";
       }
     });
+  }
+
+  // Undo stack for live shuffles: each entry is a snapshot of every team's
+  // roster taken right before a shuffle, so repeated shuffles step back.
+  let shuffleUndoStack = [];
+
+  function snapshotRosters() {
+    return CONFIG.teams.map(t => [...t.roster]);
+  }
+
+  function updateUndoBtn() {
+    const btn = document.querySelector("#shuffleUndoBtn");
+    if (btn) btn.classList.toggle("show", shuffleUndoStack.length > 0);
+  }
+
+  // Live shuffle from the main board: mutate CONFIG, persist, re-render.
+  function shuffleLive(mode) {
+    shuffleUndoStack.push(snapshotRosters());
+    if (mode === "position") randomizeByPosition(CONFIG.teams);
+    else randomizeFully(CONFIG.teams);
+    saveConfig(CONFIG);
+    render();
+    updateUndoBtn();
+    // Brief flash so the change is obvious. The node is fresh each render,
+    // so the one-shot animation replays every time.
+    const teams = document.querySelector(".teams");
+    if (teams) teams.classList.add("just-shuffled");
+  }
+
+  function undoShuffle() {
+    const snap = shuffleUndoStack.pop();
+    // Discard the snapshot if the team count changed since (e.g. via the
+    // editor) — restoring mismatched rosters would be wrong.
+    if (snap && snap.length === CONFIG.teams.length) {
+      CONFIG.teams.forEach((t, i) => { t.roster = [...snap[i]]; });
+      saveConfig(CONFIG);
+    }
+    render();
+    updateUndoBtn();
   }
 
   function addTeam() {
@@ -1577,8 +1652,8 @@ const DEFAULT_CONFIG = {
         const name = t.roster[i];
         const badge = el("span", { class: "pos-badge" }, POSITIONS[i]);
         roster.appendChild(name
-          ? el("li", {}, badge, el("span", { class: "player-name" }, name))
-          : el("li", { class: "empty" }, badge, el("span", { class: "player-name" }, "—")));
+          ? el("li", {}, el("span", { class: "player-name" }, name), badge)
+          : el("li", { class: "empty" }, el("span", { class: "player-name" }, "—"), badge));
       }
       const card = el("div", { class: "team", style: { "--team-color": t.color } },
         el("div", { class: "team-header" },
@@ -1919,10 +1994,10 @@ const DEFAULT_CONFIG = {
     const teamTools = el("div", { class: "team-tools" },
       addBtn,
       el("button", {
-        onclick: () => { randomizeByPosition(); renderEditor(); },
+        onclick: () => { randomizeByPosition(DRAFT.teams); renderEditor(); },
       }, "🎲 Randomize by position"),
       el("button", {
-        onclick: () => { randomizeFully(); renderEditor(); },
+        onclick: () => { randomizeFully(DRAFT.teams); renderEditor(); },
       }, "🎲 Randomize fully"),
     );
     teamsSec.appendChild(teamTools);
@@ -2279,23 +2354,32 @@ const DEFAULT_CONFIG = {
     DRAFT.rules = DRAFT.rules.map(r => r.trim()).filter(Boolean);
     DRAFT.courts = DRAFT.courts.map(c => c.trim() || "Court");
     CONFIG = structuredClone(DRAFT);
+    // Editing may change rosters or team count, so stale shuffle snapshots
+    // no longer apply.
+    shuffleUndoStack = [];
     // If we left manual mode, leave any in-progress lineup editing too.
     if (getScheduleMode() !== "manual") mainEditMode = false;
     saveConfig(CONFIG);
     closeEditor();
     render();
+    updateUndoBtn();
   }
 
   function commitReset() {
     if (!confirm("Reset to the defaults baked into the HTML file?")) return;
     clearConfig();
     CONFIG = loadConfig();
+    shuffleUndoStack = [];
     closeEditor();
     render();
+    updateUndoBtn();
   }
 
   // ============ WIRE UP ============
   $("#editBtn").addEventListener("click", openEditor);
+  $("#shufflePosBtn").addEventListener("click", () => shuffleLive("position"));
+  $("#shuffleAllBtn").addEventListener("click", () => shuffleLive("full"));
+  $("#shuffleUndoBtn").addEventListener("click", undoShuffle);
   $("#closeEditor").addEventListener("click", closeEditor);
   $("#cancelBtn").addEventListener("click", closeEditor);
   $("#editorOverlay").addEventListener("click", closeEditor);
