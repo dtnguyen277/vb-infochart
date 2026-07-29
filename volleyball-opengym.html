@@ -656,6 +656,13 @@ const DEFAULT_CONFIG = {
     border: 1px solid var(--border); border-radius: 6px;
     padding: 6px 10px; font-size: 13px;
   }
+  .team-remove {
+    flex: none; background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 9px; cursor: pointer; font: inherit;
+  }
+  .team-remove:hover:not(:disabled) { color: #f87171; border-color: #7f1d1d; }
+  .team-remove:disabled { opacity: 0.4; cursor: not-allowed; }
   .color-swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
   .color-swatch {
     width: 20px; height: 20px; border-radius: 50%;
@@ -1305,6 +1312,21 @@ const DEFAULT_CONFIG = {
     });
   }
 
+  function addTeam() {
+    if (DRAFT.teams.length >= 6) return;
+    const idx = DRAFT.teams.length;
+    DRAFT.teams.push({
+      name: "Team " + (idx + 1),
+      color: COLOR_PRESETS[idx % COLOR_PRESETS.length],
+      roster: ["", "", "", "", "", ""],
+    });
+  }
+
+  function removeTeam(index) {
+    if (DRAFT.teams.length <= 2) return;
+    DRAFT.teams.splice(index, 1);
+  }
+
   function setMatchScore(roundIdx, pairingIdx, scoreA, scoreB) {
     materializeMatchesIfAuto();
     const pair = normalizePairing(CONFIG.matches[roundIdx].pairings[pairingIdx]);
@@ -1520,7 +1542,8 @@ const DEFAULT_CONFIG = {
   }
 
   function renderTeams() {
-    const wrap = el("section", { class: "teams" });
+    const wrap = el("section", { class: "teams",
+      style: { "grid-template-columns": `repeat(${Math.max(CONFIG.teams.length, 1)}, 1fr)` } });
     const wins = computeWinTotals();
     for (const t of CONFIG.teams) {
       const roster = el("ul", { class: "roster" });
@@ -1839,6 +1862,15 @@ const DEFAULT_CONFIG = {
             placeholder: "Team name",
             oninput: (e) => team.name = e.target.value,
           }),
+          (() => {
+            const btn = el("button", {
+              class: "team-remove",
+              title: "Remove team",
+              onclick: () => { removeTeam(ti); renderEditor(); },
+            }, "✕");
+            btn.disabled = DRAFT.teams.length <= 2;
+            return btn;
+          })(),
         ),
         swatches,
         rosterInputs,
@@ -1846,7 +1878,12 @@ const DEFAULT_CONFIG = {
       updateSwatches();
       teamsSec.appendChild(card);
     });
+    const addBtn = el("button", {
+      onclick: () => { addTeam(); renderEditor(); },
+    }, "+ Add Team");
+    addBtn.disabled = DRAFT.teams.length >= 6;
     const teamTools = el("div", { class: "team-tools" },
+      addBtn,
       el("button", {
         onclick: () => { randomizeByPosition(); renderEditor(); },
       }, "🎲 Randomize by position"),
