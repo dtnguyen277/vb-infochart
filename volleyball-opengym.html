@@ -695,6 +695,15 @@ const DEFAULT_CONFIG = {
   }
   .add-rule, .add-round { align-self: flex-start; margin-top: 6px; font-size: 12px; }
 
+  .team-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .team-tools button {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; cursor: pointer; font: inherit; font-size: 12px;
+  }
+  .team-tools button:hover:not(:disabled) { color: var(--text); border-color: var(--text); }
+  .team-tools button:disabled { opacity: 0.4; cursor: not-allowed; }
+
   /* Schedule editor */
   .mode-picker {
     display: grid;
@@ -1255,6 +1264,47 @@ const DEFAULT_CONFIG = {
     render();
   }
 
+  function shuffleInPlace(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  // Shuffle each position row (index 0..5) independently across all teams.
+  function randomizeByPosition() {
+    for (let ri = 0; ri < 6; ri++) {
+      const names = DRAFT.teams
+        .map(t => (t.roster[ri] ?? "").trim())
+        .filter(Boolean);
+      shuffleInPlace(names);
+      let k = 0;
+      DRAFT.teams.forEach(t => {
+        const had = (t.roster[ri] ?? "").trim();
+        t.roster[ri] = had ? (names[k++] ?? "") : "";
+      });
+    }
+  }
+
+  // Collect all players, shuffle, refill slots team-by-team, top to bottom.
+  function randomizeFully() {
+    const all = [];
+    DRAFT.teams.forEach(t => {
+      for (let ri = 0; ri < 6; ri++) {
+        const n = (t.roster[ri] ?? "").trim();
+        if (n) all.push(n);
+      }
+    });
+    shuffleInPlace(all);
+    let k = 0;
+    DRAFT.teams.forEach(t => {
+      for (let ri = 0; ri < 6; ri++) {
+        t.roster[ri] = k < all.length ? all[k++] : "";
+      }
+    });
+  }
+
   function setMatchScore(roundIdx, pairingIdx, scoreA, scoreB) {
     materializeMatchesIfAuto();
     const pair = normalizePairing(CONFIG.matches[roundIdx].pairings[pairingIdx]);
@@ -1796,6 +1846,15 @@ const DEFAULT_CONFIG = {
       updateSwatches();
       teamsSec.appendChild(card);
     });
+    const teamTools = el("div", { class: "team-tools" },
+      el("button", {
+        onclick: () => { randomizeByPosition(); renderEditor(); },
+      }, "🎲 Randomize by position"),
+      el("button", {
+        onclick: () => { randomizeFully(); renderEditor(); },
+      }, "🎲 Randomize fully"),
+    );
+    teamsSec.appendChild(teamTools);
     body.appendChild(teamsSec);
 
     // Schedule
