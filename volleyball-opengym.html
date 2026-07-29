@@ -694,6 +694,14 @@ const DEFAULT_CONFIG = {
   .ed-row input[type="color"] {
     width: 44px; height: 32px; padding: 2px; flex: 0 0 44px; cursor: pointer;
   }
+  .date-row { display: flex; gap: 8px; flex: 1; min-width: 0; align-items: center; }
+  .today-btn {
+    flex: none;
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 7px 12px; font: inherit; cursor: pointer; white-space: nowrap;
+  }
+  .today-btn:hover { color: var(--text); border-color: var(--text); }
 
   .team-edit {
     background: var(--bg);
@@ -2013,9 +2021,25 @@ const DEFAULT_CONFIG = {
       el("div", { class: "ed-row" },
         el("label", {}, "Title"),
         input(DRAFT.sessionTitle, v => DRAFT.sessionTitle = v)),
-      el("div", { class: "ed-row" },
-        el("label", {}, "Date"),
-        input(DRAFT.date, v => DRAFT.date = v, { placeholder: "May 25, 2026" })),
+      (() => {
+        const dateInput = input(DRAFT.date, v => DRAFT.date = v, { placeholder: "May 25, 2026" });
+        return el("div", { class: "ed-row" },
+          el("label", {}, "Date"),
+          el("div", { class: "date-row" },
+            dateInput,
+            el("button", {
+              type: "button",
+              class: "today-btn",
+              title: "Set to today's date",
+              onclick: () => {
+                const today = new Date().toLocaleDateString("en-US",
+                  { month: "long", day: "numeric", year: "numeric" });
+                DRAFT.date = today;
+                dateInput.value = today;
+              },
+            }, "Today"),
+          ));
+      })(),
       el("div", { class: "ed-row" },
         el("label", {}, "Subtitle"),
         input(DRAFT.subtitle, v => DRAFT.subtitle = v, { placeholder: "7:00 - 9:00 PM (optional)" })),
