@@ -1439,8 +1439,10 @@ const DEFAULT_CONFIG = {
   // undo stack so a swap can be reverted with the Undo button.
   function swapPlayers(a, b) {
     if (!a || !b || sameSlot(a, b)) { swapSel = null; render(); return; }
-    shuffleUndoStack.push(snapshotRosters());
     const av = slotName(a), bv = slotName(b);
+    // Nothing to move between two empty slots — don't record an undo step.
+    if (!av.trim() && !bv.trim()) { swapSel = null; render(); return; }
+    shuffleUndoStack.push(snapshotRosters());
     setSlotName(a, bv);
     setSlotName(b, av);
     // Keep roster arrays tidy: drop trailing empties beyond the core slots.
@@ -1481,7 +1483,9 @@ const DEFAULT_CONFIG = {
     li.ondrop = (e) => {
       e.preventDefault();
       li.classList.remove("drag-over");
-      if (dragSrc) swapPlayers(dragSrc, loc);
+      const src = dragSrc;
+      dragSrc = null; dndActive = false;   // fallback in case dragend doesn't fire
+      if (src) swapPlayers(src, loc);
     };
   }
 
