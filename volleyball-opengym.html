@@ -1492,17 +1492,31 @@ const DEFAULT_CONFIG = {
   const teamByName = (name) => CONFIG.teams.find(t => t.name === name);
 
   function generateRoundRobin(teams) {
-    if (teams.length !== 4) {
-      console.warn("Auto round-robin assumes 4 teams.");
-      return [];
+    const names = teams.map(t => t.name);
+    if (names.length < 2) return [];
+    // Circle method. Add a dummy "bye" slot for odd counts; pairings that
+    // involve it are dropped, so that team sits the round out.
+    const list = names.slice();
+    if (list.length % 2 === 1) list.push(null);
+    const n = list.length;
+    const half = n / 2;
+    let row = list.slice();
+    const rounds = [];
+    for (let r = 0; r < n - 1; r++) {
+      const pairings = [];
+      for (let i = 0; i < half; i++) {
+        const a = row[i];
+        const b = row[n - 1 - i];
+        if (a !== null && b !== null) pairings.push({ teams: [a, b], winner: null });
+      }
+      rounds.push({ round: r + 1, pairings });
+      // Rotate all but the first element clockwise by one.
+      const fixed = row[0];
+      const rest = row.slice(1);
+      rest.unshift(rest.pop());
+      row = [fixed, ...rest];
     }
-    const [a, b, c, d] = teams.map(t => t.name);
-    const mk = (x, y) => ({ teams: [x, y], winner: null });
-    return [
-      { round: 1, pairings: [mk(a, b), mk(c, d)] },
-      { round: 2, pairings: [mk(a, c), mk(b, d)] },
-      { round: 3, pairings: [mk(a, d), mk(b, c)] },
-    ];
+    return rounds;
   }
 
   // ============ RENDER ============
@@ -1619,21 +1633,29 @@ const DEFAULT_CONFIG = {
     const courts = CONFIG.courts;
     const editing = mainEditMode;
 
+    // Some schedules (e.g. a 6-team round-robin) have more games per round
+    // than there are named courts. Render one column per game, labeling any
+    // overflow columns generically.
+    const maxGames = matches.reduce((mx, m) => Math.max(mx, (m.pairings || []).length), 0);
+    const colCount = Math.max(courts.length, maxGames);
+    const colName = (i) => courts[i] || ("Court " + (i + 1));
+
     const grid = el("div", { class: "schedule",
-      style: { "--court-count": courts.length } });
+      style: { "--court-count": colCount } });
 
     grid.appendChild(el("div", { class: "sched-head" }, "Round"));
-    courts.forEach((c, ci) =>
-      grid.appendChild(el("div", { class: "sched-head" + (ci > 0 ? " court-divide" : "") }, c)));
+    for (let i = 0; i < colCount; i++)
+      grid.appendChild(el("div", { class: "sched-head" + (i > 0 ? " court-divide" : "") }, colName(i)));
 
     matches.forEach((m, ri) => {
       grid.appendChild(el("div", { class: "sched-cell sched-round" }, "R" + m.round));
-      for (let i = 0; i < courts.length; i++) {
-        const pair = normalizePairing(m.pairings[i]);
+      for (let i = 0; i < colCount; i++) {
+        const raw = m.pairings[i];
+        const pair = raw ? normalizePairing(raw) : { teams: ["", ""], winner: null, scores: null };
         const [a, b] = pair.teams;
 
         const divideCls = i > 0 ? " court-divide" : "";
-        const courtName = courts[i];
+        const courtName = colName(i);
 
         // In broadcast (non-editing) mode, fully-empty matches collapse to a single em-dash.
         if (!editing && !a && !b) {
@@ -1986,12 +2008,12 @@ const DEFAULT_CONFIG = {
 
       if (currentMode === "round-robin") {
         schedBody.appendChild(el("div", { class: "mode-explainer" },
-          "Each team plays every other team once over 3 rounds. Pairings are auto-derived from the team list."));
+          "Each team plays every other team once. Rounds and pairings are auto-derived from the team list (2–6 teams)."));
         return;
       }
       if (currentMode === "king") {
         schedBody.appendChild(el("div", { class: "mode-explainer" },
-          "Round 1: Team 1 vs Team 2 on Close Court, Team 3 vs Team 4 on Far Court. After each round, winners face each other on Close Court and losers face each other on Far Court."));
+          "Round 1: Team 1 vs Team 2 on Close Court, Team 3 vs Team 4 on Far Court. After each round, winners face each other on Close Court and losers face each other on Far Court. Designed for 4 teams on 2 courts — for other team counts use Round robin or Manual."));
         return;
       }
       // manual — fall through to the editable schedule below
