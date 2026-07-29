@@ -103,7 +103,7 @@ const DEFAULT_CONFIG = {
   /* ---------- TEAMS ROW ---------- */
   .teams {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(var(--team-cols, 4), 1fr);
     gap: 1.2vw;
   }
   .team {
@@ -164,6 +164,21 @@ const DEFAULT_CONFIG = {
   }
   .roster li:last-child { border-bottom: none; }
   .roster li.empty { color: var(--muted); font-style: italic; font-weight: 400; }
+  .roster li { display: flex; align-items: center; gap: 0.8vw; }
+  .pos-badge {
+    flex: none;
+    min-width: 3.2ch;
+    text-align: center;
+    font-size: 1.2vh;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    color: #fff;
+    background: color-mix(in srgb, var(--team-color, var(--accent)) 55%, transparent);
+    border: 1px solid color-mix(in srgb, var(--team-color, var(--accent)) 70%, transparent);
+    border-radius: 0.6vh;
+    padding: 0.2vh 0.4vw;
+  }
+  .player-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ---------- BOTTOM ROW: SCHEDULE + RULES ---------- */
   .bottom {
@@ -641,6 +656,19 @@ const DEFAULT_CONFIG = {
     border: 1px solid var(--border); border-radius: 6px;
     padding: 6px 10px; font-size: 13px;
   }
+  .team-remove {
+    flex: none; background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 9px; cursor: pointer; font: inherit;
+  }
+  .team-remove:hover:not(:disabled) { color: #f87171; border-color: #7f1d1d; }
+  .team-remove:disabled { opacity: 0.4; cursor: not-allowed; }
+  .color-swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .color-swatch {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid transparent; cursor: pointer; padding: 0;
+  }
+  .color-swatch.active { border-color: var(--text); }
   .roster-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .roster-grid input {
     background: var(--bg);
@@ -649,6 +677,12 @@ const DEFAULT_CONFIG = {
     border-radius: 6px;
     padding: 6px 8px; font: inherit; min-width: 0;
   }
+  .roster-pos-row { display: flex; align-items: center; gap: 8px; }
+  .roster-pos-label {
+    flex: none; min-width: 3.5ch; text-align: right;
+    font-size: 11px; font-weight: 800; color: var(--muted);
+  }
+  .roster-pos-row input { flex: 1; }
 
   .rules-list { display: flex; flex-direction: column; gap: 6px; }
   .rule-row { display: flex; gap: 6px; }
@@ -667,6 +701,15 @@ const DEFAULT_CONFIG = {
     color: var(--text); border-color: var(--text);
   }
   .add-rule, .add-round { align-self: flex-start; margin-top: 6px; font-size: 12px; }
+
+  .team-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .team-tools button {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; cursor: pointer; font: inherit; font-size: 12px;
+  }
+  .team-tools button:hover:not(:disabled) { color: var(--text); border-color: var(--text); }
+  .team-tools button:disabled { opacity: 0.4; cursor: not-allowed; }
 
   /* Schedule editor */
   .mode-picker {
@@ -912,6 +955,8 @@ const DEFAULT_CONFIG = {
     .team-wins .wins-num { font-size: 15px; }
     .team-wins .wins-label { font-size: 14px; }
     .roster li { font-size: 13px; padding: 4px 0; }
+    .roster li { gap: 8px; }
+    .pos-badge { font-size: 10px; min-width: 3.2ch; padding: 1px 4px; border-radius: 4px; }
 
     .bottom { grid-template-columns: 1fr; gap: 10px; }
     .panel { border-radius: 10px; padding: 14px; }
@@ -1052,6 +1097,8 @@ const DEFAULT_CONFIG = {
 
 <script>
   // ============ STATE ============
+  const POSITIONS = ["S", "OH1", "M", "OPP", "OH2", "L"];
+  const COLOR_PRESETS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899"];
   const STORAGE_KEY = "vb-opengym-config";
 
   // Coerce a value to a finite number, or null. Allows 0; rejects "" / junk.
@@ -1224,6 +1271,74 @@ const DEFAULT_CONFIG = {
     render();
   }
 
+  function shuffleInPlace(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  // Shuffle each position row (index 0..5) independently across all teams.
+  function randomizeByPosition() {
+    for (let ri = 0; ri < 6; ri++) {
+      const names = DRAFT.teams
+        .map(t => (t.roster[ri] ?? "").trim())
+        .filter(Boolean);
+      shuffleInPlace(names);
+      let k = 0;
+      DRAFT.teams.forEach(t => {
+        const had = (t.roster[ri] ?? "").trim();
+        t.roster[ri] = had ? (names[k++] ?? "") : "";
+      });
+    }
+  }
+
+  // Collect all players, shuffle, refill slots team-by-team, top to bottom.
+  function randomizeFully() {
+    const all = [];
+    DRAFT.teams.forEach(t => {
+      for (let ri = 0; ri < 6; ri++) {
+        const n = (t.roster[ri] ?? "").trim();
+        if (n) all.push(n);
+      }
+    });
+    shuffleInPlace(all);
+    let k = 0;
+    DRAFT.teams.forEach(t => {
+      for (let ri = 0; ri < 6; ri++) {
+        t.roster[ri] = k < all.length ? all[k++] : "";
+      }
+    });
+  }
+
+  function addTeam() {
+    if (DRAFT.teams.length >= 6) return;
+    const idx = DRAFT.teams.length;
+    DRAFT.teams.push({
+      name: "Team " + (idx + 1),
+      color: COLOR_PRESETS[idx % COLOR_PRESETS.length],
+      roster: ["", "", "", "", "", ""],
+    });
+  }
+
+  function removeTeam(index) {
+    if (DRAFT.teams.length <= 2) return;
+    const removed = DRAFT.teams[index]?.name;
+    DRAFT.teams.splice(index, 1);
+    if (removed && Array.isArray(DRAFT.matches)) {
+      DRAFT.matches.forEach(m => (m.pairings || []).forEach(p => {
+        if (!p || !Array.isArray(p.teams)) return;
+        p.teams.forEach((t, i) => {
+          if (t === removed) {
+            p.teams[i] = "TBD";
+            if (p.winner === i) p.winner = null;
+          }
+        });
+      }));
+    }
+  }
+
   function setMatchScore(roundIdx, pairingIdx, scoreA, scoreB) {
     materializeMatchesIfAuto();
     const pair = normalizePairing(CONFIG.matches[roundIdx].pairings[pairingIdx]);
@@ -1389,17 +1504,31 @@ const DEFAULT_CONFIG = {
   const teamByName = (name) => CONFIG.teams.find(t => t.name === name);
 
   function generateRoundRobin(teams) {
-    if (teams.length !== 4) {
-      console.warn("Auto round-robin assumes 4 teams.");
-      return [];
+    const names = teams.map(t => t.name);
+    if (names.length < 2) return [];
+    // Circle method. Add a dummy "bye" slot for odd counts; pairings that
+    // involve it are dropped, so that team sits the round out.
+    const list = names.slice();
+    if (list.length % 2 === 1) list.push(null);
+    const n = list.length;
+    const half = n / 2;
+    let row = list.slice();
+    const rounds = [];
+    for (let r = 0; r < n - 1; r++) {
+      const pairings = [];
+      for (let i = 0; i < half; i++) {
+        const a = row[i];
+        const b = row[n - 1 - i];
+        if (a !== null && b !== null) pairings.push({ teams: [a, b], winner: null });
+      }
+      rounds.push({ round: r + 1, pairings });
+      // Rotate all but the first element clockwise by one.
+      const fixed = row[0];
+      const rest = row.slice(1);
+      rest.unshift(rest.pop());
+      row = [fixed, ...rest];
     }
-    const [a, b, c, d] = teams.map(t => t.name);
-    const mk = (x, y) => ({ teams: [x, y], winner: null });
-    return [
-      { round: 1, pairings: [mk(a, b), mk(c, d)] },
-      { round: 2, pairings: [mk(a, c), mk(b, d)] },
-      { round: 3, pairings: [mk(a, d), mk(b, c)] },
-    ];
+    return rounds;
   }
 
   // ============ RENDER ============
@@ -1439,15 +1568,17 @@ const DEFAULT_CONFIG = {
   }
 
   function renderTeams() {
-    const wrap = el("section", { class: "teams" });
+    const wrap = el("section", { class: "teams",
+      style: { "--team-cols": Math.max(CONFIG.teams.length, 1) } });
     const wins = computeWinTotals();
     for (const t of CONFIG.teams) {
       const roster = el("ul", { class: "roster" });
       for (let i = 0; i < 6; i++) {
         const name = t.roster[i];
+        const badge = el("span", { class: "pos-badge" }, POSITIONS[i]);
         roster.appendChild(name
-          ? el("li", {}, name)
-          : el("li", { class: "empty" }, "—"));
+          ? el("li", {}, badge, el("span", { class: "player-name" }, name))
+          : el("li", { class: "empty" }, badge, el("span", { class: "player-name" }, "—")));
       }
       const card = el("div", { class: "team", style: { "--team-color": t.color } },
         el("div", { class: "team-header" },
@@ -1514,21 +1645,29 @@ const DEFAULT_CONFIG = {
     const courts = CONFIG.courts;
     const editing = mainEditMode;
 
+    // Some schedules (e.g. a 6-team round-robin) have more games per round
+    // than there are named courts. Render one column per game, labeling any
+    // overflow columns generically.
+    const maxGames = matches.reduce((mx, m) => Math.max(mx, (m.pairings || []).length), 0);
+    const colCount = Math.max(courts.length, maxGames);
+    const colName = (i) => courts[i] || ("Court " + (i + 1));
+
     const grid = el("div", { class: "schedule",
-      style: { "--court-count": courts.length } });
+      style: { "--court-count": colCount } });
 
     grid.appendChild(el("div", { class: "sched-head" }, "Round"));
-    courts.forEach((c, ci) =>
-      grid.appendChild(el("div", { class: "sched-head" + (ci > 0 ? " court-divide" : "") }, c)));
+    for (let i = 0; i < colCount; i++)
+      grid.appendChild(el("div", { class: "sched-head" + (i > 0 ? " court-divide" : "") }, colName(i)));
 
     matches.forEach((m, ri) => {
       grid.appendChild(el("div", { class: "sched-cell sched-round" }, "R" + m.round));
-      for (let i = 0; i < courts.length; i++) {
-        const pair = normalizePairing(m.pairings[i]);
+      for (let i = 0; i < colCount; i++) {
+        const raw = m.pairings[i];
+        const pair = raw ? normalizePairing(raw) : { teams: ["", ""], winner: null, scores: null };
         const [a, b] = pair.teams;
 
         const divideCls = i > 0 ? " court-divide" : "";
-        const courtName = courts[i];
+        const courtName = colName(i);
 
         // In broadcast (non-editing) mode, fully-empty matches collapse to a single em-dash.
         if (!editing && !a && !b) {
@@ -1709,37 +1848,84 @@ const DEFAULT_CONFIG = {
       const rosterInputs = el("div", { class: "roster-grid" });
       for (let ri = 0; ri < 6; ri++) {
         const val = team.roster[ri] ?? "";
-        rosterInputs.appendChild(el("input", {
+        const field = el("input", {
           type: "text",
           value: val,
           placeholder: "Player " + (ri + 1),
-          oninput: (e) => {
-            team.roster[ri] = e.target.value;
-            // keep array length stable at 6 with falsy filtered on save
+          oninput: (e) => { team.roster[ri] = e.target.value; },
+        });
+        rosterInputs.appendChild(el("div", { class: "roster-pos-row" },
+          el("span", { class: "roster-pos-label" }, POSITIONS[ri]),
+          field));
+      }
+      const colorInput = el("input", {
+        type: "color",
+        value: team.color,
+        oninput: (e) => {
+          team.color = e.target.value;
+          card.style.setProperty("--team-color", e.target.value);
+          updateSwatches();
+        },
+      });
+      const swatches = el("div", { class: "color-swatches" });
+      function updateSwatches() {
+        Array.from(swatches.children).forEach(sw => {
+          sw.classList.toggle("active", sw.dataset.color.toLowerCase() === (team.color || "").toLowerCase());
+        });
+      }
+      COLOR_PRESETS.forEach(c => {
+        swatches.appendChild(el("button", {
+          class: "color-swatch",
+          style: { background: c },
+          "data-color": c,
+          title: c,
+          onclick: () => {
+            team.color = c;
+            colorInput.value = c;
+            card.style.setProperty("--team-color", c);
+            updateSwatches();
           },
         }));
-      }
+      });
       const card = el("div", { class: "team-edit", style: { "--team-color": team.color } },
         el("div", { class: "team-edit-head" },
-          el("input", {
-            type: "color",
-            value: team.color,
-            oninput: (e) => {
-              team.color = e.target.value;
-              card.style.setProperty("--team-color", e.target.value);
-            },
-          }),
+          colorInput,
           el("input", {
             type: "text",
             value: team.name,
             placeholder: "Team name",
             oninput: (e) => team.name = e.target.value,
           }),
+          (() => {
+            const btn = el("button", {
+              class: "team-remove",
+              title: "Remove team",
+              onclick: () => { removeTeam(ti); renderEditor(); },
+            }, "✕");
+            btn.disabled = DRAFT.teams.length <= 2;
+            return btn;
+          })(),
         ),
+        swatches,
         rosterInputs,
       );
+      updateSwatches();
       teamsSec.appendChild(card);
     });
+    const addBtn = el("button", {
+      onclick: () => { addTeam(); renderEditor(); },
+    }, "+ Add Team");
+    addBtn.disabled = DRAFT.teams.length >= 6;
+    const teamTools = el("div", { class: "team-tools" },
+      addBtn,
+      el("button", {
+        onclick: () => { randomizeByPosition(); renderEditor(); },
+      }, "🎲 Randomize by position"),
+      el("button", {
+        onclick: () => { randomizeFully(); renderEditor(); },
+      }, "🎲 Randomize fully"),
+    );
+    teamsSec.appendChild(teamTools);
     body.appendChild(teamsSec);
 
     // Schedule
@@ -1834,12 +2020,12 @@ const DEFAULT_CONFIG = {
 
       if (currentMode === "round-robin") {
         schedBody.appendChild(el("div", { class: "mode-explainer" },
-          "Each team plays every other team once over 3 rounds. Pairings are auto-derived from the team list."));
+          "Each team plays every other team once. Rounds and pairings are auto-derived from the team list (2–6 teams)."));
         return;
       }
       if (currentMode === "king") {
         schedBody.appendChild(el("div", { class: "mode-explainer" },
-          "Round 1: Team 1 vs Team 2 on Close Court, Team 3 vs Team 4 on Far Court. After each round, winners face each other on Close Court and losers face each other on Far Court."));
+          "Round 1: Team 1 vs Team 2 on Close Court, Team 3 vs Team 4 on Far Court. After each round, winners face each other on Close Court and losers face each other on Far Court. Designed for 4 teams on 2 courts — for other team counts use Round robin or Manual."));
         return;
       }
       // manual — fall through to the editable schedule below
@@ -2041,6 +2227,9 @@ const DEFAULT_CONFIG = {
         }
         if (!Array.isArray(parsed.teams) || parsed.teams.length === 0) {
           setStatus("Missing or empty 'teams' array.", "err"); return;
+        }
+        if (parsed.teams.length < 2 || parsed.teams.length > 6) {
+          setStatus("Import needs 2–6 teams.", "err"); return;
         }
         if (!Array.isArray(parsed.courts) || parsed.courts.length === 0) {
           setStatus("Missing or empty 'courts' array.", "err"); return;
