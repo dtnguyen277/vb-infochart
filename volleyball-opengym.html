@@ -179,6 +179,31 @@ const DEFAULT_CONFIG = {
     padding: 0.2vh 0.4vw;
   }
   .player-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pos-badge.sub {
+    background: color-mix(in srgb, var(--muted) 40%, transparent);
+    border-color: color-mix(in srgb, var(--muted) 55%, transparent);
+    color: var(--text);
+  }
+
+  /* Swap affordances on the main board. */
+  .roster li.slot { cursor: pointer; border-radius: 0.6vh; transition: background 0.12s, box-shadow 0.12s; }
+  .roster li.slot:hover { background: color-mix(in srgb, var(--team-color, var(--accent)) 14%, transparent); }
+  .roster li.slot:active { cursor: grabbing; }
+  .roster li.selected {
+    background: color-mix(in srgb, var(--team-color, var(--accent)) 26%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--team-color, var(--accent)) 70%, transparent);
+  }
+  .roster li.drag-over {
+    background: color-mix(in srgb, var(--team-color, var(--accent)) 22%, transparent);
+    box-shadow: inset 0 0 0 1px var(--team-color, var(--accent));
+  }
+  .roster li.sub-add { opacity: 0.55; font-style: italic; }
+  .roster li.sub-add:hover { opacity: 0.9; }
+
+  /* When any team has subs, tighten every roster so 8 rows still fit. */
+  .teams.dense .roster { gap: 0.35vh; }
+  .teams.dense .roster li { font-size: 1.85vh; padding: 0.3vh 0; }
+  .teams.dense .pos-badge { font-size: 1.05vh; }
 
   /* ---------- BOTTOM ROW: SCHEDULE + RULES ---------- */
   .bottom {
@@ -1104,7 +1129,7 @@ const DEFAULT_CONFIG = {
 <div class="shuffle-fab">
   <button id="shufflePosBtn" title="Shuffle players within each position (live)">🎲 Positions</button>
   <button id="shuffleAllBtn" title="Shuffle everyone across all teams (live)">🎲 Everyone</button>
-  <button id="shuffleUndoBtn" class="undo-btn" title="Undo the last shuffle">↩ Undo</button>
+  <button id="shuffleUndoBtn" class="undo-btn" title="Undo the last change (shuffle or swap)">↩ Undo</button>
 </div>
 <button class="edit-btn" id="editBtn" title="Edit session" aria-label="Edit session">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1134,6 +1159,11 @@ const DEFAULT_CONFIG = {
 <script>
   // ============ STATE ============
   const POSITIONS = ["S", "OH1", "M", "OPP", "OH2", "L"];
+  const CORE_SLOTS = 6;          // fixed positions
+  const MAX_SUBS = 2;            // extra bench slots
+  const SLOT_COUNT = CORE_SLOTS + MAX_SUBS; // 8
+  // Label for a roster row: fixed position, or "SUB" for bench slots.
+  function posLabel(i) { return POSITIONS[i] ?? "SUB"; }
   const COLOR_PRESETS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899"];
   const STORAGE_KEY = "vb-opengym-config";
 
@@ -1317,7 +1347,7 @@ const DEFAULT_CONFIG = {
 
   // Shuffle each position row (index 0..5) independently across all teams.
   function randomizeByPosition(teams) {
-    for (let ri = 0; ri < 6; ri++) {
+    for (let ri = 0; ri < SLOT_COUNT; ri++) {
       const names = teams
         .map(t => (t.roster[ri] ?? "").trim())
         .filter(Boolean);
@@ -1334,7 +1364,7 @@ const DEFAULT_CONFIG = {
   function randomizeFully(teams) {
     const all = [];
     teams.forEach(t => {
-      for (let ri = 0; ri < 6; ri++) {
+      for (let ri = 0; ri < SLOT_COUNT; ri++) {
         const n = (t.roster[ri] ?? "").trim();
         if (n) all.push(n);
       }
@@ -1342,7 +1372,7 @@ const DEFAULT_CONFIG = {
     shuffleInPlace(all);
     let k = 0;
     teams.forEach(t => {
-      for (let ri = 0; ri < 6; ri++) {
+      for (let ri = 0; ri < SLOT_COUNT; ri++) {
         t.roster[ri] = k < all.length ? all[k++] : "";
       }
     });
@@ -1363,6 +1393,7 @@ const DEFAULT_CONFIG = {
 
   // Live shuffle from the main board: mutate CONFIG, persist, re-render.
   function shuffleLive(mode) {
+    swapSel = null;
     shuffleUndoStack.push(snapshotRosters());
     if (mode === "position") randomizeByPosition(CONFIG.teams);
     else randomizeFully(CONFIG.teams);
@@ -1376,6 +1407,7 @@ const DEFAULT_CONFIG = {
   }
 
   function undoShuffle() {
+    swapSel = null;
     const snap = shuffleUndoStack.pop();
     // Discard the snapshot if the team count changed since (e.g. via the
     // editor) — restoring mismatched rosters would be wrong.
@@ -1385,6 +1417,72 @@ const DEFAULT_CONFIG = {
     }
     render();
     updateUndoBtn();
+  }
+
+  // ---- Manual swap / move on the main board (drag-drop + tap-to-swap) ----
+  // A slot is identified by { team: teamIndex, slot: rosterIndex }.
+  let swapSel = null;   // first slot chosen in a tap-to-swap
+  let dragSrc = null;   // slot currently being dragged
+  let dndActive = false;
+
+  function slotName(loc) {
+    return (CONFIG.teams[loc.team]?.roster[loc.slot] ?? "");
+  }
+  function setSlotName(loc, val) {
+    const r = CONFIG.teams[loc.team].roster;
+    while (r.length <= loc.slot) r.push("");
+    r[loc.slot] = val;
+  }
+  function sameSlot(a, b) { return a && b && a.team === b.team && a.slot === b.slot; }
+
+  // Swap the two players (or a player into an empty slot). Uses the shared
+  // undo stack so a swap can be reverted with the Undo button.
+  function swapPlayers(a, b) {
+    if (!a || !b || sameSlot(a, b)) { swapSel = null; render(); return; }
+    shuffleUndoStack.push(snapshotRosters());
+    const av = slotName(a), bv = slotName(b);
+    setSlotName(a, bv);
+    setSlotName(b, av);
+    // Keep roster arrays tidy: drop trailing empties beyond the core slots.
+    CONFIG.teams.forEach(t => {
+      while (t.roster.length > CORE_SLOTS && !(t.roster[t.roster.length - 1] ?? "").trim()) {
+        t.roster.pop();
+      }
+    });
+    swapSel = null;
+    saveConfig(CONFIG);
+    render();
+    updateUndoBtn();
+  }
+
+  function tapSlot(loc) {
+    if (dndActive) return;              // ignore the click that ends a drag
+    if (!swapSel) { swapSel = loc; render(); return; }
+    if (sameSlot(swapSel, loc)) { swapSel = null; render(); return; }
+    swapPlayers(swapSel, loc);
+  }
+
+  // Attach drag-drop + tap handlers to a roster row for the given slot.
+  function wireSlot(li, loc, draggable) {
+    li.classList.add("slot");
+    if (sameSlot(swapSel, loc)) li.classList.add("selected");
+    li.onclick = () => tapSlot(loc);
+    if (draggable) {
+      li.draggable = true;
+      li.ondragstart = (e) => {
+        dragSrc = loc; dndActive = true;
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", "");
+      };
+      li.ondragend = () => { dndActive = false; dragSrc = null; };
+    }
+    li.ondragover = (e) => { e.preventDefault(); li.classList.add("drag-over"); };
+    li.ondragleave = () => li.classList.remove("drag-over");
+    li.ondrop = (e) => {
+      e.preventDefault();
+      li.classList.remove("drag-over");
+      if (dragSrc) swapPlayers(dragSrc, loc);
+    };
   }
 
   function addTeam() {
@@ -1642,18 +1740,42 @@ const DEFAULT_CONFIG = {
     return totals;
   }
 
+  function subsFilled(t) {
+    let n = 0;
+    for (let i = CORE_SLOTS; i < SLOT_COUNT; i++) if ((t.roster[i] ?? "").trim()) n++;
+    return n;
+  }
+
   function renderTeams() {
-    const wrap = el("section", { class: "teams",
+    const anySubs = CONFIG.teams.some(t => subsFilled(t) > 0);
+    const wrap = el("section", { class: "teams" + (anySubs ? " dense" : ""),
       style: { "--team-cols": Math.max(CONFIG.teams.length, 1) } });
     const wins = computeWinTotals();
-    for (const t of CONFIG.teams) {
+    CONFIG.teams.forEach((t, ti) => {
       const roster = el("ul", { class: "roster" });
-      for (let i = 0; i < 6; i++) {
-        const name = t.roster[i];
-        const badge = el("span", { class: "pos-badge" }, POSITIONS[i]);
-        roster.appendChild(name
-          ? el("li", {}, el("span", { class: "player-name" }, name), badge)
-          : el("li", { class: "empty" }, el("span", { class: "player-name" }, "—"), badge));
+      const addRow = (i, name, extraCls) => {
+        const badge = el("span", { class: "pos-badge" + (i >= CORE_SLOTS ? " sub" : "") }, posLabel(i));
+        const li = name
+          ? el("li", { class: extraCls || "" }, el("span", { class: "player-name" }, name), badge)
+          : el("li", { class: "empty " + (extraCls || "") }, el("span", { class: "player-name" }, "—"), badge);
+        wireSlot(li, { team: ti, slot: i }, !!name);
+        roster.appendChild(li);
+      };
+      // 6 fixed positions always shown.
+      for (let i = 0; i < CORE_SLOTS; i++) addRow(i, t.roster[i]);
+      // Bench: filled subs, then one dashed "+ SUB" drop target on the first
+      // empty sub slot if room remains.
+      let firstEmptySub = -1;
+      for (let i = CORE_SLOTS; i < SLOT_COUNT; i++) {
+        if ((t.roster[i] ?? "").trim()) addRow(i, t.roster[i]);
+        else if (firstEmptySub === -1) firstEmptySub = i;
+      }
+      if (firstEmptySub !== -1) {
+        const badge = el("span", { class: "pos-badge sub" }, "SUB");
+        const li = el("li", { class: "empty sub-add" },
+          el("span", { class: "player-name" }, "+ add sub"), badge);
+        wireSlot(li, { team: ti, slot: firstEmptySub }, false);
+        roster.appendChild(li);
       }
       const card = el("div", { class: "team", style: { "--team-color": t.color } },
         el("div", { class: "team-header" },
@@ -1666,7 +1788,7 @@ const DEFAULT_CONFIG = {
         roster
       );
       wrap.appendChild(card);
-    }
+    });
     return wrap;
   }
 
@@ -1921,16 +2043,17 @@ const DEFAULT_CONFIG = {
     const teamsSec = el("details", { class: "ed-section" }, el("summary", {}, "Teams & Rosters"));
     DRAFT.teams.forEach((team, ti) => {
       const rosterInputs = el("div", { class: "roster-grid" });
-      for (let ri = 0; ri < 6; ri++) {
+      for (let ri = 0; ri < SLOT_COUNT; ri++) {
         const val = team.roster[ri] ?? "";
+        const isSub = ri >= CORE_SLOTS;
         const field = el("input", {
           type: "text",
           value: val,
-          placeholder: "Player " + (ri + 1),
+          placeholder: isSub ? "Sub (optional)" : "Player " + (ri + 1),
           oninput: (e) => { team.roster[ri] = e.target.value; },
         });
-        rosterInputs.appendChild(el("div", { class: "roster-pos-row" },
-          el("span", { class: "roster-pos-label" }, POSITIONS[ri]),
+        rosterInputs.appendChild(el("div", { class: "roster-pos-row" + (isSub ? " sub" : "") },
+          el("span", { class: "roster-pos-label" }, posLabel(ri)),
           field));
       }
       const colorInput = el("input", {
