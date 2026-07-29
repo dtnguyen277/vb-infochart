@@ -103,7 +103,7 @@ const DEFAULT_CONFIG = {
   /* ---------- TEAMS ROW ---------- */
   .teams {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(var(--team-cols, 4), 1fr);
     gap: 1.2vw;
   }
   .team {
@@ -1324,7 +1324,19 @@ const DEFAULT_CONFIG = {
 
   function removeTeam(index) {
     if (DRAFT.teams.length <= 2) return;
+    const removed = DRAFT.teams[index]?.name;
     DRAFT.teams.splice(index, 1);
+    if (removed && Array.isArray(DRAFT.matches)) {
+      DRAFT.matches.forEach(m => (m.pairings || []).forEach(p => {
+        if (!p || !Array.isArray(p.teams)) return;
+        p.teams.forEach((t, i) => {
+          if (t === removed) {
+            p.teams[i] = "TBD";
+            if (p.winner === i) p.winner = null;
+          }
+        });
+      }));
+    }
   }
 
   function setMatchScore(roundIdx, pairingIdx, scoreA, scoreB) {
@@ -1557,7 +1569,7 @@ const DEFAULT_CONFIG = {
 
   function renderTeams() {
     const wrap = el("section", { class: "teams",
-      style: { "grid-template-columns": `repeat(${Math.max(CONFIG.teams.length, 1)}, 1fr)` } });
+      style: { "--team-cols": Math.max(CONFIG.teams.length, 1) } });
     const wins = computeWinTotals();
     for (const t of CONFIG.teams) {
       const roster = el("ul", { class: "roster" });
@@ -2215,6 +2227,9 @@ const DEFAULT_CONFIG = {
         }
         if (!Array.isArray(parsed.teams) || parsed.teams.length === 0) {
           setStatus("Missing or empty 'teams' array.", "err"); return;
+        }
+        if (parsed.teams.length < 2 || parsed.teams.length > 6) {
+          setStatus("Import needs 2–6 teams.", "err"); return;
         }
         if (!Array.isArray(parsed.courts) || parsed.courts.length === 0) {
           setStatus("Missing or empty 'courts' array.", "err"); return;
