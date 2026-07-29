@@ -1950,19 +1950,17 @@ const DEFAULT_CONFIG = {
     return el("section", { class: "panel" },
       el("div", { class: "panel-head" },
         el("div", { class: "panel-title" }, "Match Schedule"),
-        el("button", {
-          class: "edit-lineups-btn" + (editing ? " active" : "") + (canEditLineups ? "" : " disabled"),
-          title: canEditLineups
-            ? (editing ? "Stop editing" : "Edit team lineups")
-            : "Switch schedule mode to Manual in the editor to edit lineups",
-          ...(canEditLineups ? {} : { disabled: "disabled" }),
+        // Lineup editing only applies in Manual mode, so the button is only
+        // shown there (pairings are auto-derived in round-robin / king).
+        canEditLineups ? el("button", {
+          class: "edit-lineups-btn" + (editing ? " active" : ""),
+          title: editing ? "Stop editing" : "Edit team lineups",
           onclick: () => {
-            if (!canEditLineups) return;
             mainEditMode = !mainEditMode;
             closeTeamPicker();
             render();
           },
-        }, editing ? "Done" : "Edit lineups"),
+        }, editing ? "Done" : "Edit lineups") : null,
       ),
       grid,
     );
