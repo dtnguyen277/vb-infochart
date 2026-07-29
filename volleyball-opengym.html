@@ -231,6 +231,7 @@ const DEFAULT_CONFIG = {
     margin-bottom: 1.6vh;
   }
   .panel-head .panel-title { margin-bottom: 0; }
+  .panel-actions { display: flex; align-items: center; gap: 0.8vw; }
   .edit-lineups-btn {
     background: transparent; color: var(--muted);
     border: 1px solid var(--border); border-radius: 0.6vh;
@@ -1292,6 +1293,7 @@ const DEFAULT_CONFIG = {
   function setScheduleMode(newMode) {
     const old = getScheduleMode();
     if (old === newMode) return;
+    clearScheduleUndo();
     CONFIG.scheduleMode = newMode;
     if (newMode === "round-robin") {
       // Drop stored matches so the view recomputes from teams.
@@ -1322,6 +1324,10 @@ const DEFAULT_CONFIG = {
   let mainEditMode = false; // when true, clicks on chips open team picker instead of toggling winner
   let activePicker = null;
   let pendingIoStatus = null; // {msg, kind} surviving across renderEditor() calls
+  // Snapshot of CONFIG.matches taken before a schedule reset, for one-level
+  // undo. `undefined` means no undo is available. Any other schedule edit
+  // invalidates it (see clearScheduleUndo()).
+  let scheduleUndo = undefined;
 
   function materializeMatchesIfAuto() {
     if (CONFIG.matches != null) return;
@@ -1332,7 +1338,53 @@ const DEFAULT_CONFIG = {
     }
   }
 
+  function clearScheduleUndo() { scheduleUndo = undefined; }
+
+  // True if any match has a recorded winner or score.
+  function scheduleHasResults() {
+    if (!CONFIG.matches) return false;
+    return CONFIG.matches.some(m => (m.pairings || []).some(p => {
+      const pair = normalizePairing(p);
+      return pair.winner != null ||
+        (pair.scores && (pair.scores[0] != null || pair.scores[1] != null));
+    }));
+  }
+
+  // Clear all wins and scores from the schedule (keeps the pairings).
+  function resetSchedule() {
+    if (!scheduleHasResults()) return;
+    scheduleUndo = CONFIG.matches ? structuredClone(CONFIG.matches) : null;
+    if (getScheduleMode() === "manual") {
+      // Keep the hand-built pairings; just drop winner + scores.
+      CONFIG.matches.forEach(m => {
+        m.pairings = (m.pairings || []).map(p => {
+          const pair = normalizePairing(p);
+          pair.winner = null;
+          pair.scores = null;
+          return pair;
+        });
+      });
+    } else if (getScheduleMode() === "king") {
+      // King stores an explicit schedule; rebuild the fresh initial one.
+      CONFIG.matches = buildKingInitial();
+    } else {
+      // Round-robin is auto-derived from teams — drop stored matches.
+      CONFIG.matches = null;
+    }
+    saveConfig(CONFIG);
+    render();
+  }
+
+  function undoScheduleReset() {
+    if (scheduleUndo === undefined) return;
+    CONFIG.matches = scheduleUndo ? structuredClone(scheduleUndo) : null;
+    scheduleUndo = undefined;
+    saveConfig(CONFIG);
+    render();
+  }
+
   function setSlotValue(roundIdx, pairingIdx, slotIdx, value) {
+    clearScheduleUndo();
     materializeMatchesIfAuto();
     const pair = normalizePairing(CONFIG.matches[roundIdx].pairings[pairingIdx]);
     CONFIG.matches[roundIdx].pairings[pairingIdx] = pair;
@@ -1523,6 +1575,7 @@ const DEFAULT_CONFIG = {
   }
 
   function setMatchScore(roundIdx, pairingIdx, scoreA, scoreB) {
+    clearScheduleUndo();
     materializeMatchesIfAuto();
     const pair = normalizePairing(CONFIG.matches[roundIdx].pairings[pairingIdx]);
     CONFIG.matches[roundIdx].pairings[pairingIdx] = pair;
@@ -1532,6 +1585,7 @@ const DEFAULT_CONFIG = {
   }
 
   function clearMatchFromMain(roundIdx, pairingIdx) {
+    clearScheduleUndo();
     materializeMatchesIfAuto();
     CONFIG.matches[roundIdx].pairings[pairingIdx] = { teams: ["TBD", "TBD"], winner: null };
     recomputeKingDownstream();
@@ -1540,6 +1594,7 @@ const DEFAULT_CONFIG = {
   }
 
   function addRoundFromMain() {
+    clearScheduleUndo();
     materializeMatchesIfAuto();
     // Round-robin is a fixed 3-round structure; extending it means we're
     // customizing — flip to manual so the mode label stays honest.
@@ -1793,6 +1848,7 @@ const DEFAULT_CONFIG = {
   }
 
   function toggleWinnerFromMain(roundIdx, pairingIdx, slotIdx) {
+    clearScheduleUndo();
     materializeMatchesIfAuto();
     const pair = normalizePairing(CONFIG.matches[roundIdx].pairings[pairingIdx]);
     CONFIG.matches[roundIdx].pairings[pairingIdx] = pair;
@@ -1947,20 +2003,33 @@ const DEFAULT_CONFIG = {
       onclick: () => addRoundFromMain(),
     }, "+"));
 
+    const canUndoReset = scheduleUndo !== undefined;
     return el("section", { class: "panel" },
       el("div", { class: "panel-head" },
         el("div", { class: "panel-title" }, "Match Schedule"),
-        // Lineup editing only applies in Manual mode, so the button is only
-        // shown there (pairings are auto-derived in round-robin / king).
-        canEditLineups ? el("button", {
-          class: "edit-lineups-btn" + (editing ? " active" : ""),
-          title: editing ? "Stop editing" : "Edit team lineups",
-          onclick: () => {
-            mainEditMode = !mainEditMode;
-            closeTeamPicker();
-            render();
-          },
-        }, editing ? "Done" : "Edit lineups") : null,
+        el("div", { class: "panel-actions" },
+          // Lineup editing only applies in Manual mode, so the button is only
+          // shown there (pairings are auto-derived in round-robin / king).
+          canEditLineups ? el("button", {
+            class: "edit-lineups-btn" + (editing ? " active" : ""),
+            title: editing ? "Stop editing" : "Edit team lineups",
+            onclick: () => {
+              mainEditMode = !mainEditMode;
+              closeTeamPicker();
+              render();
+            },
+          }, editing ? "Done" : "Edit lineups") : null,
+          canUndoReset ? el("button", {
+            class: "edit-lineups-btn",
+            title: "Undo the schedule reset",
+            onclick: () => undoScheduleReset(),
+          }, "↩ Undo") : null,
+          scheduleHasResults() ? el("button", {
+            class: "edit-lineups-btn",
+            title: "Clear all wins and scores",
+            onclick: () => resetSchedule(),
+          }, "Reset scores") : null,
+        ),
       ),
       grid,
     );
