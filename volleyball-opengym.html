@@ -2560,9 +2560,10 @@ const DEFAULT_CONFIG = {
     DRAFT.rules = DRAFT.rules.map(r => r.trim()).filter(Boolean);
     DRAFT.courts = DRAFT.courts.map(c => c.trim() || "Court");
     CONFIG = structuredClone(DRAFT);
-    // Editing may change rosters or team count, so stale shuffle snapshots
-    // no longer apply.
+    // Editing may change rosters, team count, or the schedule, so stale undo
+    // snapshots no longer apply.
     shuffleUndoStack = [];
+    clearScheduleUndo();
     // If we left manual mode, leave any in-progress lineup editing too.
     if (getScheduleMode() !== "manual") mainEditMode = false;
     saveConfig(CONFIG);
@@ -2576,6 +2577,7 @@ const DEFAULT_CONFIG = {
     clearConfig();
     CONFIG = loadConfig();
     shuffleUndoStack = [];
+    clearScheduleUndo();
     closeEditor();
     render();
     updateUndoBtn();
