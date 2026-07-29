@@ -197,8 +197,6 @@ const DEFAULT_CONFIG = {
     background: color-mix(in srgb, var(--team-color, var(--accent)) 22%, transparent);
     box-shadow: inset 0 0 0 1px var(--team-color, var(--accent));
   }
-  .roster li.sub-add { opacity: 0.55; font-style: italic; }
-  .roster li.sub-add:hover { opacity: 0.9; }
 
   /* When any team has subs, tighten every roster so 8 rows still fit. */
   .teams.dense .roster { gap: 0.35vh; }
@@ -1767,19 +1765,9 @@ const DEFAULT_CONFIG = {
       };
       // 6 fixed positions always shown.
       for (let i = 0; i < CORE_SLOTS; i++) addRow(i, t.roster[i]);
-      // Bench: filled subs, then one dashed "+ SUB" drop target on the first
-      // empty sub slot if room remains.
-      let firstEmptySub = -1;
+      // Bench: show only filled subs. Adding a sub is done in the editor.
       for (let i = CORE_SLOTS; i < SLOT_COUNT; i++) {
         if ((t.roster[i] ?? "").trim()) addRow(i, t.roster[i]);
-        else if (firstEmptySub === -1) firstEmptySub = i;
-      }
-      if (firstEmptySub !== -1) {
-        const badge = el("span", { class: "pos-badge sub" }, "SUB");
-        const li = el("li", { class: "empty sub-add" },
-          el("span", { class: "player-name" }, "+ add sub"), badge);
-        wireSlot(li, { team: ti, slot: firstEmptySub }, false);
-        roster.appendChild(li);
       }
       const card = el("div", { class: "team", style: { "--team-color": t.color } },
         el("div", { class: "team-header" },
