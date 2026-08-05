@@ -20,7 +20,8 @@ const DEFAULT_CONFIG = {
   subtitle: "",                  // optional: "7:00 - 9:00 PM" etc.
 
   // Schedule mode:
-  //   "round-robin" — 3 rounds, each team plays each other once
+  //   "round-robin" — each team plays each other once (n-1 rounds); can be
+  //                   extended past that with + on the board, looping pairings
   //   "king"        — Round 1 fixed; later rounds = winners on Court 1, losers on Court 2
   //   "manual"      — pairings fully under user control
   scheduleMode: "round-robin",
@@ -1208,6 +1209,9 @@ const DEFAULT_CONFIG = {
   }
   function normalizeConfig(cfg) {
     cfg.matches = normalizeMatches(cfg.matches);
+    // Optional round-robin round count (used to loop past a single cycle).
+    const rr = Math.floor(Number(cfg.roundRobinRounds));
+    cfg.roundRobinRounds = Number.isFinite(rr) && rr > 0 ? rr : undefined;
     // Backward-compat: if scheduleMode missing, infer from matches.
     if (cfg.scheduleMode !== "round-robin" && cfg.scheduleMode !== "king" && cfg.scheduleMode !== "manual") {
       cfg.scheduleMode = cfg.matches == null ? "round-robin" : "manual";
@@ -1229,7 +1233,7 @@ const DEFAULT_CONFIG = {
 
   // Build an explicit matches array from the current round-robin schedule.
   function materializeFromRoundRobin() {
-    return generateRoundRobin(CONFIG.teams).map(m => ({
+    return generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds).map(m => ({
       round: m.round,
       pairings: m.pairings.map(p => ({ teams: [...p.teams], winner: null })),
     }));
@@ -1595,16 +1599,34 @@ const DEFAULT_CONFIG = {
 
   function addRoundFromMain() {
     clearScheduleUndo();
+    // In round-robin mode, adding a round extends (loops) the round-robin
+    // rather than dropping to manual: bump the round count and re-derive.
+    if (getScheduleMode() === "round-robin") {
+      const current = generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds).length;
+      CONFIG.roundRobinRounds = current + 1;
+      saveConfig(CONFIG);
+      render();
+      return;
+    }
     materializeMatchesIfAuto();
-    // Round-robin is a fixed 3-round structure; extending it means we're
-    // customizing — flip to manual so the mode label stays honest.
-    if (getScheduleMode() === "round-robin") CONFIG.scheduleMode = "manual";
     const nextRoundNumber = CONFIG.matches.length + 1;
     CONFIG.matches.push({
       round: nextRoundNumber,
       pairings: CONFIG.courts.map(() => ({ teams: ["TBD", "TBD"], winner: null })),
     });
     recomputeKingDownstream();
+    saveConfig(CONFIG);
+    render();
+  }
+
+  // Round-robin only: shrink the schedule by one round (down to a minimum
+  // of one). Sets an explicit round count so the derived schedule respects it.
+  function removeRoundFromMain() {
+    if (getScheduleMode() !== "round-robin") return;
+    clearScheduleUndo();
+    const current = generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds).length;
+    if (current <= 1) return;
+    CONFIG.roundRobinRounds = current - 1;
     saveConfig(CONFIG);
     render();
   }
@@ -1741,7 +1763,68 @@ const DEFAULT_CONFIG = {
   };
   const teamByName = (name) => CONFIG.teams.find(t => t.name === name);
 
-  function generateRoundRobin(teams) {
+  // All orderings of [0..n-1]; used to try every pairing→court assignment.
+  function permutations(n) {
+    if (n <= 1) return [[0].slice(0, n)];
+    const base = permutations(n - 1);
+    const out = [];
+    for (const p of base) {
+      for (let i = 0; i < n; i++) {
+        const q = p.slice();
+        q.splice(i, 0, n - 1);
+        out.push(q);
+      }
+    }
+    return out;
+  }
+
+  // Balance court usage across a schedule. The circle method always parks the
+  // "fixed" team in pairing slot 0, so left as-is one team would sit on Court 1
+  // every round. This reassigns each round's pairings to courts greedily,
+  // keeping every team's time spread as evenly as possible over all courts.
+  // A single odd round-robin cycle can't be perfectly even (each team plays an
+  // odd number of games), but looping more rounds evens it right out.
+  function balanceCourts(rounds) {
+    const counts = new Map(); // team -> [countPerCourtSlot]
+    const get = (t, c) => (counts.get(t) || [])[c] || 0;
+    const add = (t, c, d) => {
+      let a = counts.get(t);
+      if (!a) { a = []; counts.set(t, a); }
+      a[c] = (a[c] || 0) + d;
+    };
+    for (const r of rounds) {
+      const ps = r.pairings;
+      if (ps.length < 2) continue; // nothing to reorder (0 or 1 game)
+      const perms = permutations(ps.length);
+      let best = null, bestMax = Infinity, bestSpread = Infinity;
+      for (const perm of perms) {
+        // Score this assignment: keep the busiest single team-court low, then
+        // minimize overall spread (sum of squares of per-team court counts).
+        let mx = 0, spread = 0;
+        for (let c = 0; c < perm.length; c++) {
+          for (const t of ps[perm[c]].teams) {
+            const nc = get(t, c) + 1;
+            mx = Math.max(mx, nc);
+            spread += nc * nc - (nc - 1) * (nc - 1); // marginal Σcount²
+          }
+        }
+        if (mx < bestMax || (mx === bestMax && spread < bestSpread)) {
+          bestMax = mx; bestSpread = spread; best = perm;
+        }
+      }
+      for (let c = 0; c < best.length; c++)
+        for (const t of ps[best[c]].teams) add(t, c, 1);
+      r.pairings = best.map(idx => ps[idx]);
+    }
+    return rounds;
+  }
+
+  // Generate a round-robin schedule via the circle method.
+  //   numRounds: how many rounds to produce. Defaults to a single full
+  //   round-robin (n-1 rounds, each team plays each other once). Asking for
+  //   more than that keeps rotating and simply loops the pairings — the
+  //   rotation is cyclic with period n-1, so round n repeats round 1, etc.
+  function generateRoundRobin(teams, numRounds) {
     const names = teams.map(t => t.name);
     if (names.length < 2) return [];
     // Circle method. Add a dummy "bye" slot for odd counts; pairings that
@@ -1750,9 +1833,11 @@ const DEFAULT_CONFIG = {
     if (list.length % 2 === 1) list.push(null);
     const n = list.length;
     const half = n / 2;
+    const fullCycle = n - 1;
+    const total = (numRounds && numRounds > 0) ? Math.floor(numRounds) : fullCycle;
     let row = list.slice();
     const rounds = [];
-    for (let r = 0; r < n - 1; r++) {
+    for (let r = 0; r < total; r++) {
       const pairings = [];
       for (let i = 0; i < half; i++) {
         const a = row[i];
@@ -1766,7 +1851,7 @@ const DEFAULT_CONFIG = {
       rest.unshift(rest.pop());
       row = [fixed, ...rest];
     }
-    return rounds;
+    return balanceCourts(rounds);
   }
 
   // ============ RENDER ============
@@ -1793,7 +1878,7 @@ const DEFAULT_CONFIG = {
 
   function computeWinTotals() {
     const totals = Object.fromEntries(CONFIG.teams.map(t => [t.name, 0]));
-    const matches = CONFIG.matches ?? generateRoundRobin(CONFIG.teams);
+    const matches = CONFIG.matches ?? generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds);
     for (const m of matches) {
       for (const p of (m.pairings || [])) {
         const pair = normalizePairing(p);
@@ -1894,7 +1979,7 @@ const DEFAULT_CONFIG = {
   }
 
   function renderSchedule() {
-    const matches = CONFIG.matches ?? generateRoundRobin(CONFIG.teams);
+    const matches = CONFIG.matches ?? generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds);
     const courts = CONFIG.courts;
     const editing = mainEditMode;
 
@@ -1999,9 +2084,18 @@ const DEFAULT_CONFIG = {
     // + button sits in the Round column, right below the last round number.
     grid.appendChild(el("button", {
       class: "add-round-main",
-      title: "Add another round",
+      title: mode === "round-robin" ? "Add another round (loops the round-robin)" : "Add another round",
       onclick: () => addRoundFromMain(),
     }, "+"));
+
+    // In round-robin, allow trimming looped rounds back down.
+    if (mode === "round-robin" && matches.length > 1) {
+      grid.appendChild(el("button", {
+        class: "add-round-main",
+        title: "Remove the last round",
+        onclick: () => removeRoundFromMain(),
+      }, "−"));
+    }
 
     const canUndoReset = scheduleUndo !== undefined;
     return el("section", { class: "panel" },
@@ -2286,7 +2380,7 @@ const DEFAULT_CONFIG = {
               ];
             } else if (m === "manual") {
               if (!DRAFT.matches) {
-                const seed = generateRoundRobin(DRAFT.teams);
+                const seed = generateRoundRobin(DRAFT.teams, DRAFT.roundRobinRounds);
                 DRAFT.matches = seed.map(mm => ({
                   round: mm.round,
                   pairings: mm.pairings.map(p => ({ teams: [...p.teams], winner: null })),
@@ -2301,7 +2395,7 @@ const DEFAULT_CONFIG = {
 
       if (currentMode === "round-robin") {
         schedBody.appendChild(el("div", { class: "mode-explainer" },
-          "Each team plays every other team once. Rounds and pairings are auto-derived from the team list (2–6 teams)."));
+          "Each team plays every other team once. Rounds and pairings are auto-derived from the team list (2–6 teams). Use + on the board to add more rounds — the pairings loop once every team has played."));
         return;
       }
       if (currentMode === "king") {
