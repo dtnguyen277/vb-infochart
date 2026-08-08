@@ -553,6 +553,17 @@ const DEFAULT_CONFIG = {
   }
   .edit-btn svg { width: 2vh; height: 2vh; display: block; }
 
+  .teams-block { display: flex; flex-direction: column; gap: 1vh; min-height: 0; }
+  .round-tabs { display: flex; flex-wrap: wrap; gap: 0.6vw; align-items: center; }
+  .round-tab {
+    background: var(--panel-2); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 0.6vh;
+    padding: 0.5vh 1vw; font-size: 1.7vh; font-weight: 600;
+    cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .round-tab:hover { color: var(--text); border-color: var(--text); }
+  .round-tab.active { background: var(--accent); color: #0b0f17; border-color: var(--accent); }
+  .round-tab.reset { margin-left: auto; }
   .shuffle-fab {
     position: fixed;
     bottom: 1.6vh; left: 1.6vh;
@@ -2213,13 +2224,68 @@ const DEFAULT_CONFIG = {
     );
   }
 
+  // Snapshot of roundRosters taken before a "Reset rounds", for one-level undo.
+  // `undefined` means no undo is available.
+  let roundsResetUndo = undefined;
+
+  // Reset every round to a copy of Round 1's rosters.
+  function resetRounds() {
+    if (!phasedOn()) return;
+    flushCurrentRound();
+    syncRoundRosters();
+    roundsResetUndo = structuredClone(CONFIG.roundRosters);
+    const base = CONFIG.roundRosters[0].map(a => [...a]);
+    CONFIG.roundRosters = CONFIG.roundRosters.map(() => base.map(a => [...a]));
+    loadRound(currentRound);
+    saveConfig(CONFIG);
+    render();
+  }
+
+  function undoResetRounds() {
+    if (roundsResetUndo === undefined) return;
+    CONFIG.roundRosters = structuredClone(roundsResetUndo);
+    roundsResetUndo = undefined;
+    loadRound(currentRound);
+    saveConfig(CONFIG);
+    render();
+  }
+
+  function renderRoundTabs() {
+    const rounds = resolvedRoundCount();
+    const bar = el("div", { class: "round-tabs" });
+    for (let r = 0; r < rounds; r++) {
+      bar.appendChild(el("button", {
+        class: "round-tab" + (r === currentRound ? " active" : ""),
+        onclick: () => switchRound(r),
+      }, "Round " + (r + 1)));
+    }
+    bar.appendChild(el("button", {
+      class: "round-tab reset",
+      title: "Reset all rounds to copies of Round 1",
+      onclick: () => resetRounds(),
+    }, "↺ Reset rounds"));
+    if (roundsResetUndo !== undefined) {
+      bar.appendChild(el("button", {
+        class: "round-tab",
+        title: "Undo the round reset",
+        onclick: () => undoResetRounds(),
+      }, "↩ Undo"));
+    }
+    return bar;
+  }
+
   function render() {
     closeTeamPicker();
     if (phasedOn()) { syncRoundRosters(); loadRound(currentRound); }
     const stage = $("#stage");
     stage.innerHTML = "";
     stage.appendChild(renderHeader());
-    stage.appendChild(renderTeams());
+    if (phasedOn()) {
+      stage.appendChild(el("div", { class: "teams-block" },
+        renderRoundTabs(), renderTeams()));
+    } else {
+      stage.appendChild(renderTeams());
+    }
     stage.appendChild(el("div", { class: "bottom" }, renderRules(), renderSchedule()));
   }
 
@@ -2734,6 +2800,7 @@ const DEFAULT_CONFIG = {
     // snapshots no longer apply.
     shuffleUndoStack = [];
     clearScheduleUndo();
+    roundsResetUndo = undefined;
     // If we left manual mode, leave any in-progress lineup editing too.
     if (getScheduleMode() !== "manual") mainEditMode = false;
     saveConfig(CONFIG);
