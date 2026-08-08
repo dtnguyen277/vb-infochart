@@ -257,6 +257,9 @@ const DEFAULT_CONFIG = {
   /* ---------- SCHEDULE ---------- */
   .schedule {
     flex: 1;
+    min-height: 0;
+    overflow-y: auto;          /* many rounds (e.g. 6) would otherwise push the */
+    -webkit-overflow-scrolling: touch; /* +/- controls off-screen; let it scroll */
     display: grid;
     grid-template-columns: auto repeat(var(--court-count, 2), 1fr);
     gap: 0.4vh 1.2vw;
@@ -739,13 +742,18 @@ const DEFAULT_CONFIG = {
   }
   .today-btn:hover { color: var(--text); border-color: var(--text); }
 
+  .team-edit-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    align-items: start;
+  }
   .team-edit {
     background: var(--bg);
     border: 1px solid var(--border);
     border-left: 4px solid var(--team-color, var(--accent));
     border-radius: 8px;
     padding: 12px;
-    margin-bottom: 10px;
   }
   .team-edit-head { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
   .team-edit-head input[type="text"] {
@@ -1161,6 +1169,7 @@ const DEFAULT_CONFIG = {
     .add-round-main { width: 32px; height: 32px; font-size: 20px; margin-top: 8px; }
 
     .editor { width: 100vw; height: 100vh; height: 100dvh; border-radius: 0; border: none; }
+    .team-edit-grid { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -2489,6 +2498,8 @@ const DEFAULT_CONFIG = {
       teamsSec.appendChild(el("div", { class: "team-tools ed-randomize-row" },
         ...makeRandomizeButtons()));
     }
+    // Team cards flow two per row to use the modal's width.
+    const teamsGrid = el("div", { class: "team-edit-grid" });
     DRAFT.teams.forEach((team, ti) => {
       const rosterInputs = el("div", { class: "roster-grid" });
       for (let ri = 0; ri < SLOT_COUNT; ri++) {
@@ -2556,8 +2567,9 @@ const DEFAULT_CONFIG = {
         rosterInputs,
       );
       updateSwatches();
-      teamsSec.appendChild(card);
+      teamsGrid.appendChild(card);
     });
+    teamsSec.appendChild(teamsGrid);
     const addBtn = el("button", {
       onclick: () => { addTeam(); renderEditor(); },
     }, "+ Add Team");
