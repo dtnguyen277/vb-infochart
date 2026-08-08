@@ -1340,8 +1340,10 @@ const DEFAULT_CONFIG = {
     return normalizeConfig(structuredClone(DEFAULT_CONFIG));
   }
   function saveConfig(cfg) {
-    // Keep the per-round store in sync with the live board before persisting.
-    if (cfg === CONFIG) flushCurrentRound();
+    // Keep the per-round store consistent with the round/team counts and the
+    // live board before persisting, so what's on disk always matches state
+    // (e.g. after adding/removing a round, where the store grows in render()).
+    if (cfg === CONFIG) { syncRoundRosters(); flushCurrentRound(); }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   }
   function clearConfig() { localStorage.removeItem(STORAGE_KEY); }
