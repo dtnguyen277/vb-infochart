@@ -2822,8 +2822,14 @@ const DEFAULT_CONFIG = {
       flushCurrentRound();
     } else {
       // Feature off: pin to Round 1 and show it. The store (if any) is kept.
+      // Restore Round 1 directly — loadRound() would no-op now that the flag
+      // is already false.
       currentRound = 0;
-      loadRound(0);
+      if (Array.isArray(CONFIG.roundRosters) && CONFIG.roundRosters[0]) {
+        CONFIG.teams.forEach((t, i) => {
+          if (CONFIG.roundRosters[0][i]) t.roster = [...CONFIG.roundRosters[0][i]];
+        });
+      }
     }
     // Editing may change rosters, team count, or the schedule, so stale undo
     // snapshots no longer apply.
