@@ -564,6 +564,9 @@ const DEFAULT_CONFIG = {
   .round-tab:hover { color: var(--text); border-color: var(--text); }
   .round-tab.active { background: var(--accent); color: #0b0f17; border-color: var(--accent); }
   .round-tab.reset { margin-left: auto; }
+  .ed-toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
+  .ed-toggle input { width: auto; }
+  .ed-toggle-hint { color: var(--muted); font-style: italic; }
   .shuffle-fab {
     position: fixed;
     bottom: 1.6vh; left: 1.6vh;
@@ -2360,6 +2363,21 @@ const DEFAULT_CONFIG = {
 
     // Teams
     const teamsSec = el("details", { class: "ed-section" }, el("summary", {}, "Teams & Rosters"));
+    // Phased-roster toggle. When on, the roster fields below edit the round
+    // currently shown on the board.
+    (() => {
+      const cb = el("input", { type: "checkbox" });
+      cb.checked = !!DRAFT.differentTeamsPerRound;
+      cb.addEventListener("change", (e) => {
+        DRAFT.differentTeamsPerRound = e.target.checked;
+        renderEditor();
+      });
+      const hint = DRAFT.differentTeamsPerRound
+        ? el("span", { class: "ed-toggle-hint" }, "editing Round " + (currentRound + 1))
+        : null;
+      teamsSec.appendChild(el("label", { class: "ed-toggle" },
+        cb, el("span", {}, "Different teams per round"), hint));
+    })();
     DRAFT.teams.forEach((team, ti) => {
       const rosterInputs = el("div", { class: "roster-grid" });
       for (let ri = 0; ri < SLOT_COUNT; ri++) {
@@ -2796,6 +2814,17 @@ const DEFAULT_CONFIG = {
     DRAFT.rules = DRAFT.rules.map(r => r.trim()).filter(Boolean);
     DRAFT.courts = DRAFT.courts.map(c => c.trim() || "Court");
     CONFIG = structuredClone(DRAFT);
+    // Phased rosters: reconcile the store with the (possibly edited) config.
+    if (phasedOn()) {
+      // Ensure dims match, then push the editor's roster edits (which targeted
+      // the current round) into the store for that round.
+      syncRoundRosters();
+      flushCurrentRound();
+    } else {
+      // Feature off: pin to Round 1 and show it. The store (if any) is kept.
+      currentRound = 0;
+      loadRound(0);
+    }
     // Editing may change rosters, team count, or the schedule, so stale undo
     // snapshots no longer apply.
     shuffleUndoStack = [];
