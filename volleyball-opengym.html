@@ -582,6 +582,21 @@ const DEFAULT_CONFIG = {
   }
   .ed-round-tab:hover { color: var(--text); border-color: var(--text); }
   .ed-round-tab.active { background: var(--accent); color: #0b0f17; border-color: var(--accent); }
+  .ed-copy-r1 {
+    margin-left: auto; background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .ed-copy-r1:hover { color: var(--text); border-color: var(--text); }
+  .team-clear {
+    margin-top: 10px; width: 100%;
+    background: transparent; color: var(--muted);
+    border: 1px dashed var(--border); border-radius: 6px;
+    padding: 6px; font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .team-clear:hover { color: #f87171; border-color: #7f1d1d; }
   .shuffle-fab {
     position: fixed;
     bottom: 1.6vh; left: 1.6vh;
@@ -2492,9 +2507,21 @@ const DEFAULT_CONFIG = {
           onclick: () => { editRound = r; renderEditor(); },
         }, "Round " + (r + 1)));
       }
+      const copyR1Btn = el("button", {
+        type: "button",
+        class: "ed-copy-r1",
+        title: "Overwrite every round's rosters with a copy of Round 1",
+        onclick: () => {
+          syncDraftRounds();
+          const base = DRAFT.roundRosters[0].map(a => [...a]);
+          DRAFT.roundRosters = DRAFT.roundRosters.map(() => base.map(a => [...a]));
+          renderEditor();
+        },
+      }, "Copy Round 1 → all rounds");
       teamsSec.appendChild(el("div", { class: "ed-round-picker" },
         el("span", { class: "ed-round-picker-label" }, "Editing round:"),
-        picker));
+        picker,
+        copyR1Btn));
       teamsSec.appendChild(el("div", { class: "team-tools ed-randomize-row" },
         ...makeRandomizeButtons()));
     }
@@ -2544,6 +2571,16 @@ const DEFAULT_CONFIG = {
           },
         }));
       });
+      // Clears this team's players for the round being edited (or the single
+      // roster when phased mode is off). Mutates in place so the phased store
+      // (team.roster references roundRosters[editRound][ti]) is updated too.
+      const clearBtn = el("button", {
+        class: "team-clear",
+        title: DRAFT.differentTeamsPerRound
+          ? "Clear this team's players for Round " + (editRound + 1)
+          : "Clear this team's players",
+        onclick: () => { team.roster.fill(""); renderEditor(); },
+      }, "Clear players");
       const card = el("div", { class: "team-edit", style: { "--team-color": team.color } },
         el("div", { class: "team-edit-head" },
           colorInput,
@@ -2565,6 +2602,7 @@ const DEFAULT_CONFIG = {
         ),
         swatches,
         rosterInputs,
+        clearBtn,
       );
       updateSwatches();
       teamsGrid.appendChild(card);
