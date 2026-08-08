@@ -567,7 +567,8 @@ const DEFAULT_CONFIG = {
   .ed-toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
   .ed-toggle input { width: auto; }
   .ed-toggle-hint { color: var(--muted); font-style: italic; }
-  .ed-round-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .ed-round-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .ed-randomize-row { margin-bottom: 14px; }
   .ed-round-picker-label { color: var(--muted); font-size: 13px; }
   .ed-round-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
   .ed-round-tab {
@@ -2457,6 +2458,16 @@ const DEFAULT_CONFIG = {
       teamsSec.appendChild(el("label", { class: "ed-toggle" },
         cb, el("span", {}, "Different teams per round")));
     })();
+    // Randomize buttons — placed below the round picker when phased, else in
+    // the bottom team-tools row.
+    const makeRandomizeButtons = () => [
+      el("button", {
+        onclick: () => { randomizeByPosition(DRAFT.teams); renderEditor(); },
+      }, "🎲 Randomize by position"),
+      el("button", {
+        onclick: () => { randomizeFully(DRAFT.teams); renderEditor(); },
+      }, "🎲 Randomize fully"),
+    ];
     // When phased, reconcile the working store and point each team's roster at
     // the selected round so the existing card fields edit that round in place.
     if (DRAFT.differentTeamsPerRound) {
@@ -2475,6 +2486,8 @@ const DEFAULT_CONFIG = {
       teamsSec.appendChild(el("div", { class: "ed-round-picker" },
         el("span", { class: "ed-round-picker-label" }, "Editing round:"),
         picker));
+      teamsSec.appendChild(el("div", { class: "team-tools ed-randomize-row" },
+        ...makeRandomizeButtons()));
     }
     DRAFT.teams.forEach((team, ti) => {
       const rosterInputs = el("div", { class: "roster-grid" });
@@ -2549,14 +2562,11 @@ const DEFAULT_CONFIG = {
       onclick: () => { addTeam(); renderEditor(); },
     }, "+ Add Team");
     addBtn.disabled = DRAFT.teams.length >= 6;
+    // Randomize buttons live under the round picker when phased; otherwise keep
+    // them alongside "+ Add Team" here.
     const teamTools = el("div", { class: "team-tools" },
       addBtn,
-      el("button", {
-        onclick: () => { randomizeByPosition(DRAFT.teams); renderEditor(); },
-      }, "🎲 Randomize by position"),
-      el("button", {
-        onclick: () => { randomizeFully(DRAFT.teams); renderEditor(); },
-      }, "🎲 Randomize fully"),
+      ...(DRAFT.differentTeamsPerRound ? [] : makeRandomizeButtons()),
     );
     teamsSec.appendChild(teamTools);
     teamsSec.open = secOpen("Teams & Rosters", false);
