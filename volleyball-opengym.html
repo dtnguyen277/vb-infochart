@@ -567,6 +567,17 @@ const DEFAULT_CONFIG = {
   .ed-toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
   .ed-toggle input { width: auto; }
   .ed-toggle-hint { color: var(--muted); font-style: italic; }
+  .ed-round-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .ed-round-picker-label { color: var(--muted); font-size: 13px; }
+  .ed-round-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ed-round-tab {
+    background: var(--panel-2); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .ed-round-tab:hover { color: var(--text); border-color: var(--text); }
+  .ed-round-tab.active { background: var(--accent); color: #0b0f17; border-color: var(--accent); }
   .shuffle-fab {
     position: fixed;
     bottom: 1.6vh; left: 1.6vh;
@@ -608,20 +619,24 @@ const DEFAULT_CONFIG = {
 
   .editor {
     position: fixed;
-    top: 0; right: 0;
-    width: min(560px, 100vw);
-    height: 100vh;
-    height: 100dvh; /* mobile-safe — accounts for URL bar */
+    top: 50%; left: 50%;
+    width: min(920px, 94vw);
+    height: min(860px, 90vh);
+    height: min(860px, 90dvh); /* mobile-safe — accounts for URL bar */
     background: var(--panel);
-    border-left: 1px solid var(--border);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.55);
     z-index: 21;
     display: none;
     flex-direction: column;
-    transform: translateX(100%);
-    transition: transform 0.2s ease-out;
+    overflow: hidden;
+    transform: translate(-50%, -50%) scale(0.96);
+    opacity: 0;
+    transition: transform 0.18s ease-out, opacity 0.18s ease-out;
     font-size: 14px;
   }
-  .editor.open { display: flex; transform: translateX(0); }
+  .editor.open { display: flex; transform: translate(-50%, -50%) scale(1); opacity: 1; }
 
   .editor-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -1144,7 +1159,7 @@ const DEFAULT_CONFIG = {
     .edit-lineups-btn { font-size: 10px; padding: 5px 8px; }
     .add-round-main { width: 32px; height: 32px; font-size: 20px; margin-top: 8px; }
 
-    .editor { width: 100vw; }
+    .editor { width: 100vw; height: 100vh; height: 100dvh; border-radius: 0; border: none; }
   }
 </style>
 </head>
@@ -1432,7 +1447,30 @@ const DEFAULT_CONFIG = {
     updateUndoBtn();
   }
   let DRAFT = null; // working copy while editor is open
+  let editRound = 0; // which round the editor's roster fields edit (phased mode)
   let mainEditMode = false; // when true, clicks on chips open team picker instead of toggling winner
+
+  // Reconcile DRAFT.roundRosters with DRAFT's round/team counts, mirroring
+  // syncRoundRosters() but for the editor's working copy. Ensures every round
+  // has a roster array per team so the editor can edit any round directly.
+  function syncDraftRounds() {
+    if (!DRAFT.differentTeamsPerRound) return;
+    if (!Array.isArray(DRAFT.roundRosters)) DRAFT.roundRosters = [];
+    const store = DRAFT.roundRosters;
+    const matches = DRAFT.matches ?? generateRoundRobin(DRAFT.teams, DRAFT.roundRobinRounds);
+    const rounds = Math.max(matches.length, 1);
+    const teamCount = DRAFT.teams.length;
+    for (let r = 0; r < rounds; r++) {
+      if (!Array.isArray(store[r])) {
+        store[r] = r === 0 ? DRAFT.teams.map(t => [...t.roster]) : store[r - 1].map(a => [...a]);
+      }
+      while (store[r].length < teamCount) store[r].push([...(DRAFT.teams[store[r].length].roster || [])]);
+      if (store[r].length > teamCount) store[r].length = teamCount;
+    }
+    if (store.length > rounds) store.length = rounds;
+    if (editRound >= rounds) editRound = rounds - 1;
+    if (editRound < 0) editRound = 0;
+  }
   let activePicker = null;
   let pendingIoStatus = null; // {msg, kind} surviving across renderEditor() calls
   // Snapshot of CONFIG.matches taken before a schedule reset, for one-level
@@ -1669,12 +1707,21 @@ const DEFAULT_CONFIG = {
       color: COLOR_PRESETS[idx % COLOR_PRESETS.length],
       roster: ["", "", "", "", "", ""],
     });
+    // Keep the per-round store index-aligned with teams: give the new team a
+    // blank roster in every round.
+    if (Array.isArray(DRAFT.roundRosters)) {
+      DRAFT.roundRosters.forEach(round => round.push(["", "", "", "", "", ""]));
+    }
   }
 
   function removeTeam(index) {
     if (DRAFT.teams.length <= 2) return;
     const removed = DRAFT.teams[index]?.name;
     DRAFT.teams.splice(index, 1);
+    // Remove the same team slot from every round so the store stays aligned.
+    if (Array.isArray(DRAFT.roundRosters)) {
+      DRAFT.roundRosters.forEach(round => round.splice(index, 1));
+    }
     if (removed && Array.isArray(DRAFT.matches)) {
       DRAFT.matches.forEach(m => (m.pairings || []).forEach(p => {
         if (!p || !Array.isArray(p.teams)) return;
@@ -2318,6 +2365,7 @@ const DEFAULT_CONFIG = {
   // ============ EDITOR ============
   function openEditor() {
     DRAFT = structuredClone(CONFIG);
+    editRound = currentRound; // start editing whichever round the board shows
     renderEditor();
     document.body.classList.add("editor-open");
     $("#editor").classList.add("open");
@@ -2342,10 +2390,18 @@ const DEFAULT_CONFIG = {
 
   function renderEditor() {
     const body = $("#editorBody");
+    // Preserve which sections are expanded across re-renders (e.g. toggling a
+    // checkbox or adding a team), so the section the user is working in doesn't
+    // snap shut. First render (empty body) falls back to per-section defaults.
+    const firstRender = body.children.length === 0;
+    const openSecs = new Set(
+      [...body.querySelectorAll(".ed-section[open] > summary")].map(s => s.textContent));
+    // Whether a section titled `title` should be open, given `dflt` on first render.
+    const secOpen = (title, dflt) => firstRender ? dflt : openSecs.has(title);
     body.innerHTML = "";
 
     // Session
-    const sessionSec = el("details", { class: "ed-section", open: "" },
+    const sessionSec = el("details", { class: "ed-section" },
       el("summary", {}, "Session"),
       el("div", { class: "ed-row" },
         el("label", {}, "Title"),
@@ -2373,6 +2429,7 @@ const DEFAULT_CONFIG = {
         el("label", {}, "Subtitle"),
         input(DRAFT.subtitle, v => DRAFT.subtitle = v, { placeholder: "7:00 - 9:00 PM (optional)" })),
     );
+    sessionSec.open = secOpen("Session", true);
     body.appendChild(sessionSec);
 
     // Courts
@@ -2382,25 +2439,43 @@ const DEFAULT_CONFIG = {
         el("label", {}, "Court " + (i + 1)),
         input(c, v => DRAFT.courts[i] = v)));
     });
+    courtsSec.open = secOpen("Courts", false);
     body.appendChild(courtsSec);
 
     // Teams
     const teamsSec = el("details", { class: "ed-section" }, el("summary", {}, "Teams & Rosters"));
     // Phased-roster toggle. When on, the roster fields below edit the round
-    // currently shown on the board.
+    // selected in the round-picker (independent of the board's shown round).
     (() => {
       const cb = el("input", { type: "checkbox" });
       cb.checked = !!DRAFT.differentTeamsPerRound;
       cb.addEventListener("change", (e) => {
         DRAFT.differentTeamsPerRound = e.target.checked;
+        if (e.target.checked) syncDraftRounds(); // materialize per-round store
         renderEditor();
       });
-      const hint = DRAFT.differentTeamsPerRound
-        ? el("span", { class: "ed-toggle-hint" }, "editing Round " + (currentRound + 1))
-        : null;
       teamsSec.appendChild(el("label", { class: "ed-toggle" },
-        cb, el("span", {}, "Different teams per round"), hint));
+        cb, el("span", {}, "Different teams per round")));
     })();
+    // When phased, reconcile the working store and point each team's roster at
+    // the selected round so the existing card fields edit that round in place.
+    if (DRAFT.differentTeamsPerRound) {
+      syncDraftRounds();
+      DRAFT.teams.forEach((team, ti) => { team.roster = DRAFT.roundRosters[editRound][ti]; });
+      const matches = DRAFT.matches ?? generateRoundRobin(DRAFT.teams, DRAFT.roundRobinRounds);
+      const rounds = Math.max(matches.length, 1);
+      const picker = el("div", { class: "ed-round-tabs" });
+      for (let r = 0; r < rounds; r++) {
+        picker.appendChild(el("button", {
+          type: "button",
+          class: "ed-round-tab" + (r === editRound ? " active" : ""),
+          onclick: () => { editRound = r; renderEditor(); },
+        }, "Round " + (r + 1)));
+      }
+      teamsSec.appendChild(el("div", { class: "ed-round-picker" },
+        el("span", { class: "ed-round-picker-label" }, "Editing round:"),
+        picker));
+    }
     DRAFT.teams.forEach((team, ti) => {
       const rosterInputs = el("div", { class: "roster-grid" });
       for (let ri = 0; ri < SLOT_COUNT; ri++) {
@@ -2484,6 +2559,7 @@ const DEFAULT_CONFIG = {
       }, "🎲 Randomize fully"),
     );
     teamsSec.appendChild(teamTools);
+    teamsSec.open = secOpen("Teams & Rosters", false);
     body.appendChild(teamsSec);
 
     // Schedule
@@ -2701,6 +2777,7 @@ const DEFAULT_CONFIG = {
 
     drawSchedule();
     schedSec.appendChild(schedBody);
+    schedSec.open = secOpen("Match Schedule", false);
     body.appendChild(schedSec);
 
     // Rules
@@ -2730,6 +2807,7 @@ const DEFAULT_CONFIG = {
         onclick: () => { DRAFT.rules.push(""); drawRules(); },
       }, "+ Add rule"),
     );
+    rulesSec.open = secOpen("Rules", false);
     body.appendChild(rulesSec);
 
     // Import / Export
@@ -2826,6 +2904,7 @@ const DEFAULT_CONFIG = {
       el("div", { class: "io-actions" }, copyBtn, loadBtn, refreshBtn),
       ioStatus,
     );
+    ioSec.open = secOpen("Import / Export", false);
     body.appendChild(ioSec);
   }
 
@@ -2836,30 +2915,30 @@ const DEFAULT_CONFIG = {
     });
     DRAFT.rules = DRAFT.rules.map(r => r.trim()).filter(Boolean);
     DRAFT.courts = DRAFT.courts.map(c => c.trim() || "Court");
+    // Phased rosters: the editor edits DRAFT.roundRosters directly (team rosters
+    // are pointed at the selected round). The trim above replaced team.roster
+    // with fresh arrays, so write the trimmed edited round back into the store
+    // and trim every other round too.
+    if (DRAFT.differentTeamsPerRound && Array.isArray(DRAFT.roundRosters)) {
+      if (DRAFT.roundRosters[editRound]) DRAFT.roundRosters[editRound] = DRAFT.teams.map(t => [...t.roster]);
+      DRAFT.roundRosters = DRAFT.roundRosters.map(round =>
+        round.map(roster => roster.map(n => (n ?? "").trim())));
+    }
     CONFIG = structuredClone(DRAFT);
-    // Phased rosters: reconcile the store with the (possibly edited) config.
+    // Reconcile after save.
     if (phasedOn()) {
-      // Ensure dims match, then push the editor's roster edits (which targeted
-      // the current round) into the store for that round.
+      // Edits already live in the store; just fix dims and rebuild the board's
+      // teams from the round it displays (board round is independent of edit round).
       syncRoundRosters();
-      flushCurrentRound();
+      loadRound(currentRound);
     } else {
-      // Feature off (non-destructive): keep the store. First preserve any roster
-      // edits made in this same editor session by writing the edited board into
-      // the round that was being viewed/edited, so re-enabling restores them.
-      // Then show Round 1 (loadRound() would no-op now that the flag is false).
-      if (Array.isArray(CONFIG.roundRosters)) {
-        if (CONFIG.roundRosters[currentRound]) {
-          CONFIG.roundRosters[currentRound] = CONFIG.teams.map(t => [...t.roster]);
-        }
-        currentRound = 0;
-        if (CONFIG.roundRosters[0]) {
-          CONFIG.teams.forEach((t, i) => {
-            if (CONFIG.roundRosters[0][i]) t.roster = [...CONFIG.roundRosters[0][i]];
-          });
-        }
-      } else {
-        currentRound = 0;
+      // Feature off (non-destructive): the store (if any) already holds every
+      // edit made in the editor. Just show Round 1.
+      currentRound = 0;
+      if (Array.isArray(CONFIG.roundRosters) && CONFIG.roundRosters[0]) {
+        CONFIG.teams.forEach((t, i) => {
+          if (CONFIG.roundRosters[0][i]) t.roster = [...CONFIG.roundRosters[0][i]];
+        });
       }
     }
     // Editing may change rosters, team count, or the schedule, so stale undo
