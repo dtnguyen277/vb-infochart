@@ -26,6 +26,10 @@ const DEFAULT_CONFIG = {
   //   "manual"      — pairings fully under user control
   scheduleMode: "round-robin",
 
+  // Phased rosters: when true, each schedule round can have different players
+  // (team names/colors stay shared). Off = single shared roster (legacy).
+  differentTeamsPerRound: false,
+
   courts: ["Close Court", "Far Court"],
 
   teams: [
@@ -1209,6 +1213,9 @@ const DEFAULT_CONFIG = {
   }
   function normalizeConfig(cfg) {
     cfg.matches = normalizeMatches(cfg.matches);
+    // Phased rosters: coerce the flag and drop a malformed store.
+    cfg.differentTeamsPerRound = !!cfg.differentTeamsPerRound;
+    if (!Array.isArray(cfg.roundRosters)) cfg.roundRosters = undefined;
     // Optional round-robin round count (used to loop past a single cycle).
     const rr = Math.floor(Number(cfg.roundRobinRounds));
     cfg.roundRobinRounds = Number.isFinite(rr) && rr > 0 ? rr : undefined;
@@ -1319,11 +1326,79 @@ const DEFAULT_CONFIG = {
     return normalizeConfig(structuredClone(DEFAULT_CONFIG));
   }
   function saveConfig(cfg) {
+    // Keep the per-round store in sync with the live board before persisting.
+    if (cfg === CONFIG) flushCurrentRound();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   }
   function clearConfig() { localStorage.removeItem(STORAGE_KEY); }
 
   let CONFIG = loadConfig();
+
+  // ---- Phased rosters (per-round roster storage) ---------------------------
+  // UI state: which round's rosters the board shows (0-based). Not persisted;
+  // resets to 0 on reload.
+  let currentRound = 0;
+
+  function phasedOn() { return !!CONFIG.differentTeamsPerRound; }
+
+  // Number of rounds in the resolved schedule = number of roster phases.
+  function resolvedRoundCount() {
+    const matches = CONFIG.matches ?? generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds);
+    return Math.max(matches.length, 1);
+  }
+
+  // Deep copy of every team's current roster (array of arrays of strings).
+  function cloneRosters() { return CONFIG.teams.map(t => [...t.roster]); }
+
+  // Push the live board (CONFIG.teams[*].roster) into the store for the round
+  // currently displayed, so persistence and switching stay consistent.
+  function flushCurrentRound() {
+    if (!phasedOn() || !Array.isArray(CONFIG.roundRosters)) return;
+    CONFIG.roundRosters[currentRound] = cloneRosters();
+  }
+
+  // Reconcile the store with the current round count and team count. Safe to
+  // call on every render. New rounds copy the previous round (round 0 copies
+  // the live board). New teams copy their current roster into every round.
+  function syncRoundRosters() {
+    if (!phasedOn()) return;
+    if (!Array.isArray(CONFIG.roundRosters)) CONFIG.roundRosters = [];
+    const store = CONFIG.roundRosters;
+    const rounds = resolvedRoundCount();
+    const teamCount = CONFIG.teams.length;
+    for (let r = 0; r < rounds; r++) {
+      if (!Array.isArray(store[r])) {
+        store[r] = r === 0 ? cloneRosters() : store[r - 1].map(a => [...a]);
+      }
+      while (store[r].length < teamCount) {
+        const ti = store[r].length;
+        store[r].push([...CONFIG.teams[ti].roster]);
+      }
+      if (store[r].length > teamCount) store[r].length = teamCount;
+    }
+    if (store.length > rounds) store.length = rounds;
+    if (currentRound >= rounds) currentRound = rounds - 1;
+    if (currentRound < 0) currentRound = 0;
+  }
+
+  // Load a round's stored rosters onto the live board.
+  function loadRound(r) {
+    if (!phasedOn() || !Array.isArray(CONFIG.roundRosters)) return;
+    const snap = CONFIG.roundRosters[r];
+    if (!snap) return;
+    CONFIG.teams.forEach((t, i) => { t.roster = snap[i] ? [...snap[i]] : []; });
+  }
+
+  // Switch the visible round: save the current board, load the target round.
+  function switchRound(r) {
+    if (r === currentRound) return;
+    swapSel = null;
+    flushCurrentRound();
+    currentRound = r;
+    loadRound(r);
+    saveConfig(CONFIG);
+    render();
+  }
   let DRAFT = null; // working copy while editor is open
   let mainEditMode = false; // when true, clicks on chips open team picker instead of toggling winner
   let activePicker = null;
@@ -2140,6 +2215,7 @@ const DEFAULT_CONFIG = {
 
   function render() {
     closeTeamPicker();
+    if (phasedOn()) { syncRoundRosters(); loadRound(currentRound); }
     const stage = $("#stage");
     stage.innerHTML = "";
     stage.appendChild(renderHeader());
