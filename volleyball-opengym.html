@@ -1227,9 +1227,18 @@ const DEFAULT_CONFIG = {
   }
   function normalizeConfig(cfg) {
     cfg.matches = normalizeMatches(cfg.matches);
-    // Phased rosters: coerce the flag and drop a malformed store.
+    // Phased rosters: coerce the flag; drop a malformed store, and sanitize a
+    // valid one into an array-of-rounds of array-of-teams of string rosters
+    // (guards against hand-edited/imported JSON). syncRoundRosters fixes dims.
     cfg.differentTeamsPerRound = !!cfg.differentTeamsPerRound;
-    if (!Array.isArray(cfg.roundRosters)) cfg.roundRosters = undefined;
+    if (!Array.isArray(cfg.roundRosters)) {
+      cfg.roundRosters = undefined;
+    } else {
+      cfg.roundRosters = cfg.roundRosters.map(round =>
+        Array.isArray(round)
+          ? round.map(roster => Array.isArray(roster) ? roster.map(n => String(n ?? "")) : [])
+          : []);
+    }
     // Optional round-robin round count (used to loop past a single cycle).
     const rr = Math.floor(Number(cfg.roundRobinRounds));
     cfg.roundRobinRounds = Number.isFinite(rr) && rr > 0 ? rr : undefined;
@@ -1343,7 +1352,10 @@ const DEFAULT_CONFIG = {
     // Keep the per-round store consistent with the round/team counts and the
     // live board before persisting, so what's on disk always matches state
     // (e.g. after adding/removing a round, where the store grows in render()).
-    if (cfg === CONFIG) { syncRoundRosters(); flushCurrentRound(); }
+    // Flush the live board to the round it belongs to BEFORE reconciling: sync
+    // may clamp currentRound (e.g. after removing the viewed last round), and
+    // flushing after the clamp would write the board into the wrong round.
+    if (cfg === CONFIG) { flushCurrentRound(); syncRoundRosters(); }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   }
   function clearConfig() { localStorage.removeItem(STORAGE_KEY); }
@@ -1409,11 +1421,15 @@ const DEFAULT_CONFIG = {
   function switchRound(r) {
     if (r === currentRound) return;
     swapSel = null;
+    // The shuffle/swap undo snapshot belongs to the round being left; applying
+    // it after a switch would clobber a different round's rosters. Drop it.
+    shuffleUndoStack = [];
     flushCurrentRound();
     currentRound = r;
     loadRound(r);
     saveConfig(CONFIG);
     render();
+    updateUndoBtn();
   }
   let DRAFT = null; // working copy while editor is open
   let mainEditMode = false; // when true, clicks on chips open team picker instead of toggling winner
@@ -1547,6 +1563,7 @@ const DEFAULT_CONFIG = {
   // Live shuffle from the main board: mutate CONFIG, persist, re-render.
   function shuffleLive(mode) {
     swapSel = null;
+    roundsResetUndo = undefined;   // rosters change → stale reset-undo no longer applies
     shuffleUndoStack.push(snapshotRosters());
     if (mode === "position") randomizeByPosition(CONFIG.teams);
     else randomizeFully(CONFIG.teams);
@@ -1561,6 +1578,7 @@ const DEFAULT_CONFIG = {
 
   function undoShuffle() {
     swapSel = null;
+    roundsResetUndo = undefined;   // rosters change → stale reset-undo no longer applies
     const snap = shuffleUndoStack.pop();
     // Discard the snapshot if the team count changed since (e.g. via the
     // editor) — restoring mismatched rosters would be wrong.
@@ -1595,6 +1613,7 @@ const DEFAULT_CONFIG = {
     const av = slotName(a), bv = slotName(b);
     // Nothing to move between two empty slots — don't record an undo step.
     if (!av.trim() && !bv.trim()) { swapSel = null; render(); return; }
+    roundsResetUndo = undefined;   // rosters change → stale reset-undo no longer applies
     shuffleUndoStack.push(snapshotRosters());
     setSlotName(a, bv);
     setSlotName(b, av);
@@ -1690,6 +1709,7 @@ const DEFAULT_CONFIG = {
 
   function addRoundFromMain() {
     clearScheduleUndo();
+    roundsResetUndo = undefined;   // round count changes → stale reset-undo no longer applies
     // In round-robin mode, adding a round extends (loops) the round-robin
     // rather than dropping to manual: bump the round count and re-derive.
     if (getScheduleMode() === "round-robin") {
@@ -1715,6 +1735,7 @@ const DEFAULT_CONFIG = {
   function removeRoundFromMain() {
     if (getScheduleMode() !== "round-robin") return;
     clearScheduleUndo();
+    roundsResetUndo = undefined;   // round count changes → stale reset-undo no longer applies
     const current = generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds).length;
     if (current <= 1) return;
     CONFIG.roundRobinRounds = current - 1;
@@ -2823,14 +2844,22 @@ const DEFAULT_CONFIG = {
       syncRoundRosters();
       flushCurrentRound();
     } else {
-      // Feature off: pin to Round 1 and show it. The store (if any) is kept.
-      // Restore Round 1 directly — loadRound() would no-op now that the flag
-      // is already false.
-      currentRound = 0;
-      if (Array.isArray(CONFIG.roundRosters) && CONFIG.roundRosters[0]) {
-        CONFIG.teams.forEach((t, i) => {
-          if (CONFIG.roundRosters[0][i]) t.roster = [...CONFIG.roundRosters[0][i]];
-        });
+      // Feature off (non-destructive): keep the store. First preserve any roster
+      // edits made in this same editor session by writing the edited board into
+      // the round that was being viewed/edited, so re-enabling restores them.
+      // Then show Round 1 (loadRound() would no-op now that the flag is false).
+      if (Array.isArray(CONFIG.roundRosters)) {
+        if (CONFIG.roundRosters[currentRound]) {
+          CONFIG.roundRosters[currentRound] = CONFIG.teams.map(t => [...t.roster]);
+        }
+        currentRound = 0;
+        if (CONFIG.roundRosters[0]) {
+          CONFIG.teams.forEach((t, i) => {
+            if (CONFIG.roundRosters[0][i]) t.roster = [...CONFIG.roundRosters[0][i]];
+          });
+        }
+      } else {
+        currentRound = 0;
       }
     }
     // Editing may change rosters, team count, or the schedule, so stale undo
