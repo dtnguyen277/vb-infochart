@@ -22,6 +22,7 @@ const DEFAULT_CONFIG = {
   // Schedule mode:
   //   "round-robin" — each team plays each other once (n-1 rounds); can be
   //                   extended past that with + on the board, looping pairings
+  //   "five-team-round-robin" — five teams, two courts, with one bye per round
   //   "king"        — Round 1 fixed; later rounds = winners on Court 1, losers on Court 2
   //   "manual"      — pairings fully under user control
   scheduleMode: "round-robin",
@@ -283,6 +284,7 @@ const DEFAULT_CONFIG = {
     justify-content: center;
     min-width: 4vw;
   }
+  .sitting-cell { justify-content: center; }
   .match { display: flex; align-items: center; gap: 0.8vw; font-weight: 700; }
   .match .vs {
     color: var(--muted); font-weight: 500; font-size: 1.8vh;
@@ -323,7 +325,7 @@ const DEFAULT_CONFIG = {
     margin-left: -0.6vw;
     padding-left: 0.6vw;
   }
-  .match .team-chip {
+  .match .team-chip, .sitting-cell .team-chip {
     display: inline-flex; align-items: center; gap: 0.5vw;
     padding: 0.3vh 0.7vw;
     border-radius: 0.6vh;
@@ -334,17 +336,17 @@ const DEFAULT_CONFIG = {
     transition: filter 0.12s, transform 0.08s, background 0.12s;
     user-select: none;
   }
-  .match .team-chip:hover {
+  .match .team-chip:hover, .sitting-cell .team-chip:hover {
     filter: brightness(1.18);
     background: color-mix(in srgb, var(--team-color, var(--accent)) 28%, transparent);
   }
-  .match .team-chip:active { transform: scale(0.97); }
-  .match .team-chip .team-dot {
+  .match .team-chip:active, .sitting-cell .team-chip:active { transform: scale(0.97); }
+  .match .team-chip .team-dot, .sitting-cell .team-chip .team-dot {
     width: 1.2vh; height: 1.2vh;
     background: var(--team-color, var(--accent));
     border-radius: 50%;
   }
-  .match .team-chip.winner {
+  .match .team-chip.winner, .sitting-cell .team-chip.winner {
     background: color-mix(in srgb, var(--team-color, var(--accent)) 32%, transparent);
     border-color: color-mix(in srgb, var(--team-color, var(--accent)) 80%, transparent);
     box-shadow: 0 0 0 0.2vh color-mix(in srgb, var(--team-color, var(--accent)) 28%, transparent);
@@ -1172,7 +1174,6 @@ const DEFAULT_CONFIG = {
       flex: 1; height: 1px;
       background: var(--border);
     }
-
     /* Each match: court label on top, the two teams balanced around the
        center "vs"/score beneath. */
     .sched-cell.match,
@@ -1202,13 +1203,29 @@ const DEFAULT_CONFIG = {
       color: var(--border);
       font-style: italic;
     }
+    .sched-cell.sitting-cell {
+      display: grid;
+      justify-items: center;
+      gap: 9px;
+      padding: 11px 12px;
+      margin-bottom: 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--panel-2);
+    }
+    .sched-cell.sitting-cell::before {
+      content: attr(data-court);
+      font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.16em;
+      color: var(--muted);
+    }
     /* Team A hugs the center from the left, Team B from the right. */
     .sched-cell.match > :nth-child(1) { justify-self: end; }
     .sched-cell.match > :nth-child(2) { justify-self: center; }
     .sched-cell.match > :nth-child(3) { justify-self: start; }
 
-    .match .team-chip { font-size: 14px; padding: 6px 10px; gap: 7px; border-radius: 7px; }
-    .match .team-chip .team-dot { width: 8px; height: 8px; }
+    .match .team-chip, .sitting-cell .team-chip { font-size: 14px; padding: 6px 10px; gap: 7px; border-radius: 7px; }
+    .match .team-chip .team-dot, .sitting-cell .team-chip .team-dot { width: 8px; height: 8px; }
     .match .team-chip.winner { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--team-color, var(--accent)) 28%, transparent); }
     .match .winner-slot { gap: 6px; }
     .match .winner-slot .trophy { font-size: 14px; }
@@ -1347,6 +1364,7 @@ const DEFAULT_CONFIG = {
     return matches.map((m, i) => ({
       round: m.round ?? i + 1,
       pairings: (m.pairings || []).map(normalizePairing),
+      bye: typeof m.bye === "string" ? m.bye : null,
     }));
   }
   function normalizeConfig(cfg) {
@@ -1367,15 +1385,16 @@ const DEFAULT_CONFIG = {
     const rr = Math.floor(Number(cfg.roundRobinRounds));
     cfg.roundRobinRounds = Number.isFinite(rr) && rr > 0 ? rr : undefined;
     // Backward-compat: if scheduleMode missing, infer from matches.
-    if (cfg.scheduleMode !== "round-robin" && cfg.scheduleMode !== "king" && cfg.scheduleMode !== "manual") {
+    if (cfg.scheduleMode !== "round-robin" && cfg.scheduleMode !== "five-team-round-robin" && cfg.scheduleMode !== "king" && cfg.scheduleMode !== "manual") {
       cfg.scheduleMode = cfg.matches == null ? "round-robin" : "manual";
     }
     return cfg;
   }
 
-  const SCHEDULE_MODES = ["round-robin", "king", "manual"];
+  const SCHEDULE_MODES = ["round-robin", "five-team-round-robin", "king", "manual"];
   const SCHEDULE_MODE_LABELS = {
     "round-robin": "Round robin",
+    "five-team-round-robin": "5-team round robin (bye)",
     "king":        "King of the court",
     "manual":      "Manual",
   };
@@ -1387,9 +1406,10 @@ const DEFAULT_CONFIG = {
 
   // Build an explicit matches array from the current round-robin schedule.
   function materializeFromRoundRobin() {
-    return generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds).map(m => ({
+    return generateAutoSchedule(CONFIG.teams, CONFIG.roundRobinRounds, getScheduleMode()).map(m => ({
       round: m.round,
       pairings: m.pairings.map(p => ({ teams: [...p.teams], winner: null })),
+      bye: m.bye || null,
     }));
   }
 
@@ -1453,7 +1473,7 @@ const DEFAULT_CONFIG = {
     if (old === newMode) return;
     clearScheduleUndo();
     CONFIG.scheduleMode = newMode;
-    if (newMode === "round-robin") {
+    if (newMode === "round-robin" || newMode === "five-team-round-robin") {
       // Drop stored matches so the view recomputes from teams.
       CONFIG.matches = null;
     } else if (newMode === "king") {
@@ -1495,7 +1515,7 @@ const DEFAULT_CONFIG = {
 
   // Number of rounds in the resolved schedule = number of roster phases.
   function resolvedRoundCount() {
-    const matches = CONFIG.matches ?? generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds);
+    const matches = CONFIG.matches ?? generateAutoSchedule(CONFIG.teams, CONFIG.roundRobinRounds, getScheduleMode());
     return Math.max(matches.length, 1);
   }
 
@@ -1566,7 +1586,7 @@ const DEFAULT_CONFIG = {
     if (!DRAFT.differentTeamsPerRound) return;
     if (!Array.isArray(DRAFT.roundRosters)) DRAFT.roundRosters = [];
     const store = DRAFT.roundRosters;
-    const matches = DRAFT.matches ?? generateRoundRobin(DRAFT.teams, DRAFT.roundRobinRounds);
+    const matches = DRAFT.matches ?? generateAutoSchedule(DRAFT.teams, DRAFT.roundRobinRounds, DRAFT.scheduleMode);
     const rounds = Math.max(matches.length, 1);
     const teamCount = DRAFT.teams.length;
     for (let r = 0; r < rounds; r++) {
@@ -1868,8 +1888,8 @@ const DEFAULT_CONFIG = {
     roundsResetUndo = undefined;   // round count changes → stale reset-undo no longer applies
     // In round-robin mode, adding a round extends (loops) the round-robin
     // rather than dropping to manual: bump the round count and re-derive.
-    if (getScheduleMode() === "round-robin") {
-      const current = generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds).length;
+    if (getScheduleMode() === "round-robin" || getScheduleMode() === "five-team-round-robin") {
+      const current = generateAutoSchedule(CONFIG.teams, CONFIG.roundRobinRounds, getScheduleMode()).length;
       CONFIG.roundRobinRounds = current + 1;
       saveConfig(CONFIG);
       render();
@@ -1889,10 +1909,10 @@ const DEFAULT_CONFIG = {
   // Round-robin only: shrink the schedule by one round (down to a minimum
   // of one). Sets an explicit round count so the derived schedule respects it.
   function removeRoundFromMain() {
-    if (getScheduleMode() !== "round-robin") return;
+    if (getScheduleMode() !== "round-robin" && getScheduleMode() !== "five-team-round-robin") return;
     clearScheduleUndo();
     roundsResetUndo = undefined;   // round count changes → stale reset-undo no longer applies
-    const current = generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds).length;
+    const current = generateAutoSchedule(CONFIG.teams, CONFIG.roundRobinRounds, getScheduleMode()).length;
     if (current <= 1) return;
     CONFIG.roundRobinRounds = current - 1;
     saveConfig(CONFIG);
@@ -2122,6 +2142,20 @@ const DEFAULT_CONFIG = {
     return balanceCourts(rounds);
   }
 
+  // The five-team mode uses the same circle method, but keeps the bye visible
+  // in the schedule so it is clear which team is resting each round.
+  function generateAutoSchedule(teams, numRounds, mode) {
+    const rounds = generateRoundRobin(teams, numRounds);
+    if (mode === "five-team-round-robin" && teams.length === 5) {
+      const names = new Set(teams.map(t => t.name));
+      for (const round of rounds) {
+        const playing = new Set(round.pairings.flatMap(pairing => pairing.teams));
+        round.bye = [...names].find(name => !playing.has(name)) || null;
+      }
+    }
+    return rounds;
+  }
+
   // ============ RENDER ============
   function deriveWeekday(dateStr) {
     if (!dateStr) return "";
@@ -2146,7 +2180,7 @@ const DEFAULT_CONFIG = {
 
   function computeWinTotals() {
     const totals = Object.fromEntries(CONFIG.teams.map(t => [t.name, 0]));
-    const matches = CONFIG.matches ?? generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds);
+    const matches = CONFIG.matches ?? generateAutoSchedule(CONFIG.teams, CONFIG.roundRobinRounds, getScheduleMode());
     for (const m of matches) {
       for (const p of (m.pairings || [])) {
         const pair = normalizePairing(p);
@@ -2247,7 +2281,14 @@ const DEFAULT_CONFIG = {
   }
 
   function renderSchedule() {
-    const matches = CONFIG.matches ?? generateRoundRobin(CONFIG.teams, CONFIG.roundRobinRounds);
+    const mode = getScheduleMode();
+    let matches = CONFIG.matches ?? generateAutoSchedule(CONFIG.teams, CONFIG.roundRobinRounds, mode);
+    // Repair schedules saved before the bye metadata was persisted. Results
+    // remain in CONFIG.matches; this only supplies the display-only bye slot.
+    if (mode === "five-team-round-robin" && CONFIG.teams.length === 5) {
+      const generated = generateAutoSchedule(CONFIG.teams, CONFIG.roundRobinRounds, mode);
+      matches = matches.map((match, i) => ({ ...match, bye: match.bye || generated[i]?.bye || null }));
+    }
     const courts = CONFIG.courts;
     const editing = mainEditMode;
 
@@ -2256,14 +2297,17 @@ const DEFAULT_CONFIG = {
     // overflow columns generically.
     const maxGames = matches.reduce((mx, m) => Math.max(mx, (m.pairings || []).length), 0);
     const colCount = Math.max(courts.length, maxGames);
+    const hasSittingColumn = matches.some(m => m.bye);
     const colName = (i) => courts[i] || ("Court " + (i + 1));
 
     const grid = el("div", { class: "schedule",
-      style: { "--court-count": colCount } });
+      style: { "--court-count": colCount + (hasSittingColumn ? 1 : 0) } });
 
     grid.appendChild(el("div", { class: "sched-head" }, "Round"));
     for (let i = 0; i < colCount; i++)
       grid.appendChild(el("div", { class: "sched-head" + (i > 0 ? " court-divide" : "") }, colName(i)));
+    if (hasSittingColumn)
+      grid.appendChild(el("div", { class: "sched-head court-divide" }, "Sitting"));
 
     matches.forEach((m, ri) => {
       grid.appendChild(el("div", { class: "sched-cell sched-round" }, "R" + m.round));
@@ -2344,20 +2388,25 @@ const DEFAULT_CONFIG = {
 
         grid.appendChild(cell);
       }
+      if (hasSittingColumn) {
+        grid.appendChild(el("div", {
+          class: "sched-cell sitting-cell court-divide",
+          "data-court": "Sitting",
+        }, m.bye ? renderSlot(m.bye, false, null) : "—"));
+      }
     });
 
-    const mode = getScheduleMode();
     const canEditLineups = mode === "manual";
 
     // + button sits in the Round column, right below the last round number.
     grid.appendChild(el("button", {
       class: "add-round-main",
-      title: mode === "round-robin" ? "Add another round (loops the round-robin)" : "Add another round",
+      title: (mode === "round-robin" || mode === "five-team-round-robin") ? "Add another round (loops the round-robin)" : "Add another round",
       onclick: () => addRoundFromMain(),
     }, "+"));
 
     // In round-robin, allow trimming looped rounds back down.
-    if (mode === "round-robin" && matches.length > 1) {
+    if ((mode === "round-robin" || mode === "five-team-round-robin") && matches.length > 1) {
       grid.appendChild(el("button", {
         class: "add-round-main",
         title: "Remove the last round",
@@ -2581,7 +2630,7 @@ const DEFAULT_CONFIG = {
     if (DRAFT.differentTeamsPerRound) {
       syncDraftRounds();
       DRAFT.teams.forEach((team, ti) => { team.roster = DRAFT.roundRosters[editRound][ti]; });
-      const matches = DRAFT.matches ?? generateRoundRobin(DRAFT.teams, DRAFT.roundRobinRounds);
+      const matches = DRAFT.matches ?? generateAutoSchedule(DRAFT.teams, DRAFT.roundRobinRounds, DRAFT.scheduleMode);
       const rounds = Math.max(matches.length, 1);
       const picker = el("div", { class: "ed-round-tabs" });
       for (let r = 0; r < rounds; r++) {
@@ -2762,7 +2811,7 @@ const DEFAULT_CONFIG = {
           onclick: () => {
             DRAFT.scheduleMode = m;
             // Apply same transitions setScheduleMode does, but on DRAFT.
-            if (m === "round-robin") {
+            if (m === "round-robin" || m === "five-team-round-robin") {
               DRAFT.matches = null;
             } else if (m === "king") {
               const names = DRAFT.teams.map(t => t.name);
@@ -2783,7 +2832,7 @@ const DEFAULT_CONFIG = {
               ];
             } else if (m === "manual") {
               if (!DRAFT.matches) {
-                const seed = generateRoundRobin(DRAFT.teams, DRAFT.roundRobinRounds);
+                const seed = generateAutoSchedule(DRAFT.teams, DRAFT.roundRobinRounds, DRAFT.scheduleMode);
                 DRAFT.matches = seed.map(mm => ({
                   round: mm.round,
                   pairings: mm.pairings.map(p => ({ teams: [...p.teams], winner: null })),
@@ -2799,6 +2848,13 @@ const DEFAULT_CONFIG = {
       if (currentMode === "round-robin") {
         schedBody.appendChild(el("div", { class: "mode-explainer" },
           "Each team plays every other team once. Rounds and pairings are auto-derived from the team list (2–6 teams). Use + on the board to add more rounds — the pairings loop once every team has played."));
+        return;
+      }
+      if (currentMode === "five-team-round-robin") {
+        schedBody.appendChild(el("div", { class: "mode-explainer" },
+          DRAFT.teams.length === 5
+            ? "Five teams rotate through two courts. Every round has two matches, and the schedule identifies the one team sitting out."
+            : "This mode is designed for exactly five teams. Add or remove teams in Teams & Rosters to use it."));
         return;
       }
       if (currentMode === "king") {
