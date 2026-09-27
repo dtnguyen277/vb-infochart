@@ -892,6 +892,25 @@ const DEFAULT_CONFIG = {
   }
   .team-tools button:hover:not(:disabled) { color: var(--text); border-color: var(--text); }
   .team-tools button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .bulk-roster-import {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    margin: 10px 0;
+  }
+  .bulk-roster-import input {
+    min-width: 0;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 7px 10px; font: inherit;
+  }
+  .bulk-roster-import button {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 7px 10px; cursor: pointer; font: inherit; white-space: nowrap;
+  }
+  .bulk-roster-import button:hover { color: var(--text); border-color: var(--text); }
+  .bulk-roster-import-hint { margin: -3px 0 10px; font-size: 12px; color: var(--muted); }
 
   /* Schedule editor */
   .mode-picker {
@@ -2546,6 +2565,25 @@ const DEFAULT_CONFIG = {
     });
   }
 
+  // Fill slots by position across teams: the first group of names occupies
+  // the first slot on every team, then the second slot, and so on. This keeps
+  // the teams as evenly sized as possible and clears leftover old names.
+  function populateTeamsFromNames(rawNames) {
+    const names = rawNames.split(",").map(name => name.trim()).filter(Boolean);
+    const teams = DRAFT.teams;
+    // Mutate each roster so, in phased mode, its reference into
+    // DRAFT.roundRosters remains intact.
+    teams.forEach(team => {
+      team.roster.length = SLOT_COUNT;
+      team.roster.fill("");
+    });
+    names.slice(0, teams.length * SLOT_COUNT).forEach((name, index) => {
+      const slot = Math.floor(index / teams.length);
+      const teamIndex = index % teams.length;
+      teams[teamIndex].roster[slot] = name;
+    });
+  }
+
   function renderEditor() {
     const body = $("#editorBody");
     // Preserve which sections are expanded across re-renders (e.g. toggling a
@@ -2658,6 +2696,24 @@ const DEFAULT_CONFIG = {
       teamsSec.appendChild(el("div", { class: "team-tools ed-randomize-row" },
         ...makeRandomizeButtons()));
     }
+    const bulkNames = el("input", {
+      type: "text",
+      placeholder: "Alex, Blake, Casey, ...",
+      "aria-label": "Comma-separated player names",
+    });
+    teamsSec.appendChild(el("div", { class: "bulk-roster-import" },
+      bulkNames,
+      el("button", {
+        type: "button",
+        title: "Replace player fields using these names",
+        onclick: () => {
+          populateTeamsFromNames(bulkNames.value);
+          renderEditor();
+        },
+      }, "Populate teams"),
+    ));
+    teamsSec.appendChild(el("div", { class: "bulk-roster-import-hint" },
+      "Paste comma-separated names to fill teams evenly. This replaces all player fields for the current round."));
     // Team cards flow two per row to use the modal's width.
     const teamsGrid = el("div", { class: "team-edit-grid" });
     DRAFT.teams.forEach((team, ti) => {
