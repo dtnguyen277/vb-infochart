@@ -771,6 +771,22 @@ const DEFAULT_CONFIG = {
     transition: color 0.15s, background 0.15s;
   }
   .ed-section > summary::-webkit-details-marker { display: none; }
+  .ed-section-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .ed-section-icons {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 14px;
+    line-height: 1;
+    letter-spacing: 0;
+    filter: saturate(0.88);
+  }
+  .ed-section-label { white-space: nowrap; }
   .ed-section > summary::after {
     content: "";
     width: 8px; height: 8px;
@@ -2658,14 +2674,19 @@ const DEFAULT_CONFIG = {
     // snap shut. First render (empty body) falls back to per-section defaults.
     const firstRender = body.children.length === 0;
     const openSecs = new Set(
-      [...body.querySelectorAll(".ed-section[open] > summary")].map(s => s.textContent));
+      [...body.querySelectorAll(".ed-section[open] > summary")].map(s => s.dataset.section));
     // Whether a section titled `title` should be open, given `dflt` on first render.
     const secOpen = (title, dflt) => firstRender ? dflt : openSecs.has(title);
+    const sectionSummary = (title, icons) => el("summary", { "data-section": title },
+      el("span", { class: "ed-section-title" },
+        el("span", { class: "ed-section-icons", "aria-hidden": "true" }, icons),
+        el("span", { class: "ed-section-label" }, title),
+      ));
     body.innerHTML = "";
 
     // Session
     const sessionSec = el("details", { class: "ed-section" },
-      el("summary", {}, "Session"),
+      sectionSummary("Session", "📅"),
       el("div", { class: "ed-row" },
         el("label", {}, "Title"),
         input(DRAFT.sessionTitle, v => DRAFT.sessionTitle = v)),
@@ -2696,7 +2717,7 @@ const DEFAULT_CONFIG = {
     body.appendChild(sessionSec);
 
     // Courts
-    const courtsSec = el("details", { class: "ed-section" }, el("summary", {}, "Courts"));
+    const courtsSec = el("details", { class: "ed-section" }, sectionSummary("Courts", "🏟️"));
     DRAFT.courts.forEach((c, i) => {
       courtsSec.appendChild(el("div", { class: "ed-row" },
         el("label", {}, "Court " + (i + 1)),
@@ -2706,7 +2727,7 @@ const DEFAULT_CONFIG = {
     body.appendChild(courtsSec);
 
     // Teams
-    const teamsSec = el("details", { class: "ed-section" }, el("summary", {}, "Teams & Rosters"));
+    const teamsSec = el("details", { class: "ed-section" }, sectionSummary("Teams & Rosters", "👥"));
     // Phased-roster toggle. When on, the roster fields below edit the round
     // selected in the round-picker (independent of the board's shown round).
     (() => {
@@ -2901,7 +2922,7 @@ const DEFAULT_CONFIG = {
     body.appendChild(teamsSec);
 
     // Schedule
-    const schedSec = el("details", { class: "ed-section" }, el("summary", {}, "Match Schedule"));
+    const schedSec = el("details", { class: "ed-section" }, sectionSummary("Match Schedule", "🗓️"));
     const schedBody = el("div", {});
     const isAuto = DRAFT.matches == null;
 
@@ -3145,7 +3166,7 @@ const DEFAULT_CONFIG = {
     }
     drawRules();
     const rulesSec = el("details", { class: "ed-section" },
-      el("summary", {}, "Rules"),
+      sectionSummary("Rules", "📋"),
       rulesList,
       el("button", {
         class: "add-rule",
