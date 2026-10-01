@@ -894,16 +894,17 @@ const DEFAULT_CONFIG = {
   .team-tools button:disabled { opacity: 0.4; cursor: not-allowed; }
   .bulk-roster-import {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
     margin: 10px 0;
   }
-  .bulk-roster-import input {
+  .bulk-roster-import input, .bulk-roster-import textarea, .bulk-roster-import select {
     min-width: 0;
     background: var(--bg); color: var(--text);
     border: 1px solid var(--border); border-radius: 6px;
     padding: 7px 10px; font: inherit;
   }
+  .bulk-roster-import textarea { min-height: 72px; resize: vertical; }
   .bulk-roster-import button {
     background: transparent; color: var(--muted);
     border: 1px solid var(--border); border-radius: 6px;
@@ -2584,6 +2585,72 @@ const DEFAULT_CONFIG = {
     });
   }
 
+  // Convert user-facing position names into the board's fixed slot labels.
+  // "OH" intentionally covers both OH1 and OH2 slots.
+  function normalizePlayerPosition(position) {
+    const value = String(position ?? "").trim().toUpperCase();
+    const aliases = {
+      "SETTER": "S", "S": "S",
+      "OUTSIDE": "OH", "OUTSIDE HITTER": "OH", "OH": "OH", "OH1": "OH", "OH2": "OH",
+      "MIDDLE": "M", "MIDDLE BLOCKER": "M", "MB": "M", "M": "M",
+      "OPPOSITE": "OPP", "RIGHT SIDE": "OPP", "OPP": "OPP",
+      "LIBERO": "L", "L": "L",
+    };
+    return aliases[value] || "";
+  }
+
+  function positionMatchesSlot(position, slotIndex) {
+    const normalized = normalizePlayerPosition(position);
+    const slot = posLabel(slotIndex);
+    return normalized === "OH" ? slot === "OH1" || slot === "OH2" : normalized === slot;
+  }
+
+  // Make complete primary and secondary passes before falling back to an open
+  // slot. This prevents (for example) an OH from being placed at S simply
+  // because the roster has no setter yet.
+  function populateTeamsFromPlayerData(players) {
+    const teams = DRAFT.teams;
+    const remaining = players.map(player => ({
+      name: player.name.trim(),
+      primaryPosition: player.primaryPosition,
+      secondaryPosition: player.secondaryPosition,
+    }));
+    teams.forEach(team => {
+      team.roster.length = SLOT_COUNT;
+      team.roster.fill("");
+    });
+    const openSlots = [];
+    for (let slot = 0; slot < SLOT_COUNT; slot++) {
+      for (let teamIndex = 0; teamIndex < teams.length; teamIndex++) {
+        openSlots.push({ teamIndex, slot });
+      }
+    }
+    const fillMatching = (positionKey) => {
+      for (let i = 0; i < openSlots.length && remaining.length;) {
+        const target = openSlots[i];
+        const playerIndex = remaining.findIndex(player => positionMatchesSlot(player[positionKey], target.slot));
+        if (playerIndex === -1) { i++; continue; }
+        teams[target.teamIndex].roster[target.slot] = remaining.splice(playerIndex, 1)[0].name;
+        openSlots.splice(i, 1);
+      }
+    };
+    fillMatching("primaryPosition");
+    fillMatching("secondaryPosition");
+    openSlots.slice(0, remaining.length).forEach((target, index) => {
+      teams[target.teamIndex].roster[target.slot] = remaining[index].name;
+    });
+  }
+
+  function parsePlayerData(raw) {
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { throw new Error("Enter valid JSON: an array of player objects."); }
+    if (!Array.isArray(parsed)) throw new Error("The JSON must be an array of player objects.");
+    const invalid = parsed.find(player => !player || typeof player !== "object" || typeof player.name !== "string" || !player.name.trim());
+    if (invalid) throw new Error("Every player needs a non-empty string name.");
+    return parsed;
+  }
+
   function renderEditor() {
     const body = $("#editorBody");
     // Preserve which sections are expanded across re-renders (e.g. toggling a
@@ -2696,24 +2763,46 @@ const DEFAULT_CONFIG = {
       teamsSec.appendChild(el("div", { class: "team-tools ed-randomize-row" },
         ...makeRandomizeButtons()));
     }
-    const bulkNames = el("input", {
-      type: "text",
-      placeholder: "Alex, Blake, Casey, ...",
-      "aria-label": "Comma-separated player names",
-    });
+    const importMode = DRAFT.playerImportMode || "csv";
+    const importModeSelect = el("select", {
+      "aria-label": "Player import format",
+      onchange: (e) => { DRAFT.playerImportMode = e.target.value; renderEditor(); },
+    },
+      el("option", { value: "csv" }, "Comma-separated names"),
+      el("option", { value: "json" }, "Position-aware JSON"),
+    );
+    importModeSelect.value = importMode;
+    const bulkInput = importMode === "json"
+      ? el("textarea", {
+          placeholder: '[\n  {"name":"Alex Chen","primaryPosition":"OH","secondaryPosition":"S"}\n]',
+          "aria-label": "Position-aware player JSON",
+        })
+      : el("input", {
+          type: "text",
+          placeholder: "Alex, Blake, Casey, ...",
+          "aria-label": "Comma-separated player names",
+        });
     teamsSec.appendChild(el("div", { class: "bulk-roster-import" },
-      bulkNames,
+      importModeSelect,
+      bulkInput,
       el("button", {
         type: "button",
-        title: "Replace player fields using these names",
+        title: "Replace player fields using this list",
         onclick: () => {
-          populateTeamsFromNames(bulkNames.value);
-          renderEditor();
+          try {
+            if (importMode === "json") populateTeamsFromPlayerData(parsePlayerData(bulkInput.value));
+            else populateTeamsFromNames(bulkInput.value);
+            renderEditor();
+          } catch (error) {
+            alert(error.message);
+          }
         },
       }, "Populate teams"),
     ));
     teamsSec.appendChild(el("div", { class: "bulk-roster-import-hint" },
-      "Paste comma-separated names to fill teams evenly. This replaces all player fields for the current round."));
+      importMode === "json"
+        ? "Uses primary positions first, secondary positions for shortages, then any remaining player. Accepts S, OH, M, OPP, and L. This replaces all player fields for the current round."
+        : "Paste comma-separated names to fill teams evenly. This replaces all player fields for the current round."));
     // Team cards flow two per row to use the modal's width.
     const teamsGrid = el("div", { class: "team-edit-grid" });
     DRAFT.teams.forEach((team, ti) => {
