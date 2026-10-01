@@ -185,6 +185,26 @@ const DEFAULT_CONFIG = {
     padding: 0.2vh 0.4vw;
   }
   .player-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .player-name-editor { flex: 1 1 auto; min-width: 0; }
+  .player-name-editor input {
+    width: 100%; min-width: 0; box-sizing: border-box;
+    font: inherit; color: var(--text); background: var(--panel);
+    border: 1px solid var(--team-color, var(--accent)); border-radius: 0.45vh;
+    padding: 0.15em 0.35em;
+  }
+  .player-edit-btn {
+    flex: none; opacity: 0; padding: 0.15em 0.35em;
+    color: var(--muted); background: transparent; border: 0; border-radius: 0.45vh;
+    font: inherit; line-height: 1; cursor: pointer;
+    transition: opacity 0.12s, color 0.12s, background 0.12s;
+  }
+  .roster li:hover .player-edit-btn, .roster li:focus-within .player-edit-btn { opacity: 1; }
+  .player-edit-btn:hover, .player-edit-btn:focus-visible {
+    color: var(--text); background: color-mix(in srgb, var(--team-color, var(--accent)) 18%, transparent);
+  }
+  .roster li.editing-player { cursor: default; }
+  .roster li.editing-player .player-edit-btn { opacity: 1; color: var(--team-color, var(--accent)); }
+  @media (hover: none) { .player-edit-btn { opacity: 1; } }
   .pos-badge.sub {
     background: color-mix(in srgb, var(--muted) 40%, transparent);
     border-color: color-mix(in srgb, var(--muted) 55%, transparent);
@@ -1336,6 +1356,7 @@ const DEFAULT_CONFIG = {
     <div class="shot-scroll"><img id="shotImg" alt="Session screenshot"></div>
     <div class="shot-modal-foot">
       <a class="btn" id="shotDownload" download>⬇ Save image</a>
+      <button class="btn secondary" id="shotCopy" type="button">⧉ Copy image</button>
       <span class="shot-hint">On a phone: long‑press the image to save it to your photos.</span>
     </div>
   </div>
@@ -2279,10 +2300,16 @@ const DEFAULT_CONFIG = {
       const roster = el("ul", { class: "roster" });
       const addRow = (i, name, extraCls) => {
         const badge = el("span", { class: "pos-badge" + (i >= CORE_SLOTS ? " sub" : "") }, posLabel(i));
+        const loc = { team: ti, slot: i };
+        const playerName = name ?? "";
+        const editBtn = el("button", {
+          class: "player-edit-btn", type: "button", title: "Edit player name", "aria-label": "Edit player name",
+          onclick: (e) => { e.stopPropagation(); editPlayerName(li, loc, playerName); },
+        }, "✎");
         const li = name
-          ? el("li", { class: extraCls || "" }, el("span", { class: "player-name" }, name), badge)
-          : el("li", { class: "empty " + (extraCls || "") }, el("span", { class: "player-name" }, "—"), badge);
-        wireSlot(li, { team: ti, slot: i }, !!name);
+          ? el("li", { class: extraCls || "" }, el("span", { class: "player-name" }, name), editBtn, badge)
+          : el("li", { class: "empty " + (extraCls || "") }, el("span", { class: "player-name" }, "—"), editBtn, badge);
+        wireSlot(li, loc, !!name);
         roster.appendChild(li);
       };
       // 6 fixed positions always shown.
@@ -3299,7 +3326,7 @@ const DEFAULT_CONFIG = {
     }, "Refresh");
 
     const ioSec = el("details", { class: "ed-section io-section" },
-      el("summary", {}, "Import / Export"),
+      sectionSummary("Import / Export", "💾"),
       el("div", { class: "io-hint" },
         "JSON of the current draft. Edit here and Load to replace, or Copy to share."),
       ioTextarea,
@@ -3407,6 +3434,7 @@ const DEFAULT_CONFIG = {
       const dl = $("#shotDownload");
       dl.href = url;
       dl.download = screenshotFilename();
+      $("#shotCopy").textContent = "⧉ Copy image";
       $("#shotTitle").textContent = [CONFIG.sessionTitle, CONFIG.date].filter(Boolean).join(" · ") || "Screenshot";
       $("#shotOverlay").classList.add("open");
     } catch (err) {
@@ -3415,10 +3443,33 @@ const DEFAULT_CONFIG = {
       btn.disabled = false;
     }
   }
+  async function copyScreenshot() {
+    const btn = $("#shotCopy");
+    const imageUrl = $("#shotImg").src;
+    if (!imageUrl) return;
+    if (!navigator.clipboard || !window.ClipboardItem) {
+      alert("Copying images is not supported by this browser. Please save the image instead.");
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const image = await fetch(imageUrl).then((response) => {
+        if (!response.ok) throw new Error("Could not prepare the image.");
+        return response.blob();
+      });
+      await navigator.clipboard.write([new ClipboardItem({ [image.type || "image/png"]: image })]);
+      btn.textContent = "✓ Copied";
+    } catch (err) {
+      alert("Sorry, the image could not be copied. Please save it instead.");
+    } finally {
+      btn.disabled = false;
+    }
+  }
   function closeShot() { $("#shotOverlay").classList.remove("open"); }
 
   // ============ WIRE UP ============
   $("#shotBtn").addEventListener("click", captureScreenshot);
+  $("#shotCopy").addEventListener("click", copyScreenshot);
   $("#shotClose").addEventListener("click", closeShot);
   $("#shotOverlay").addEventListener("click", (e) => { if (e.target === $("#shotOverlay")) closeShot(); });
   $("#editBtn").addEventListener("click", openEditor);
