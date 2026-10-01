@@ -1809,6 +1809,42 @@ const DEFAULT_CONFIG = {
   }
   function sameSlot(a, b) { return a && b && a.team === b.team && a.slot === b.slot; }
 
+  // Edit a displayed player name in place. Saving follows the same live roster
+  // update and persistence path as the rest of the main-board edits.
+  function editPlayerName(li, loc, name) {
+    li.classList.add("editing-player");
+    const nameEl = $(".player-name", li);
+    const editBtn = $(".player-edit-btn", li);
+    const input = el("input", { value: name, "aria-label": "Player name" });
+    const editor = el("span", { class: "player-name-editor" }, input);
+    nameEl.replaceWith(editor);
+    editBtn.textContent = "✓";
+    editBtn.title = "Save player name";
+    editBtn.setAttribute("aria-label", "Save player name");
+
+    let finished = false;
+    const finish = (save) => {
+      if (finished) return;
+      finished = true;
+      if (save) {
+        roundsResetUndo = undefined;
+        setSlotName(loc, input.value.trim());
+        shuffleUndoStack = [];
+        saveConfig(CONFIG);
+      }
+      render();
+      updateUndoBtn();
+    };
+
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    });
+    editBtn.onclick = (e) => { e.stopPropagation(); finish(true); };
+    requestAnimationFrame(() => { input.focus(); input.select(); });
+  }
+
   // Swap the two players (or a player into an empty slot). Uses the shared
   // undo stack so a swap can be reverted with the Undo button.
   function swapPlayers(a, b) {
