@@ -131,6 +131,13 @@ const DEFAULT_CONFIG = {
     padding: 1.6vh 1.6vw;
     display: flex; align-items: center; justify-content: space-between;
     gap: 0.8vw;
+    cursor: pointer;
+    transition: box-shadow 0.12s, filter 0.12s;
+  }
+  .team-header:hover { filter: brightness(1.08); }
+  .team-header.team-selected {
+    box-shadow: inset 0 0 0 0.35vh #fff, 0 0 0 0.25vh var(--team-color, var(--accent));
+    filter: brightness(1.12);
   }
   .team-name {
     font-size: 3vh; font-weight: 900; letter-spacing: 0.02em;
@@ -1776,7 +1783,11 @@ const DEFAULT_CONFIG = {
   let shuffleUndoStack = [];
 
   function snapshotRosters() {
-    return CONFIG.teams.map(t => [...t.roster]);
+    if (phasedOn()) flushCurrentRound();
+    return {
+      teams: CONFIG.teams.map(t => [...t.roster]),
+      rounds: phasedOn() ? structuredClone(CONFIG.roundRosters) : null,
+    };
   }
 
   function updateUndoBtn() {
@@ -1806,8 +1817,9 @@ const DEFAULT_CONFIG = {
     const snap = shuffleUndoStack.pop();
     // Discard the snapshot if the team count changed since (e.g. via the
     // editor) — restoring mismatched rosters would be wrong.
-    if (snap && snap.length === CONFIG.teams.length) {
-      CONFIG.teams.forEach((t, i) => { t.roster = [...snap[i]]; });
+    if (snap && snap.teams?.length === CONFIG.teams.length) {
+      CONFIG.teams.forEach((t, i) => { t.roster = [...snap.teams[i]]; });
+      if (phasedOn() && snap.rounds) CONFIG.roundRosters = structuredClone(snap.rounds);
       saveConfig(CONFIG);
     }
     render();
@@ -1817,6 +1829,7 @@ const DEFAULT_CONFIG = {
   // ---- Manual swap / move on the main board (drag-drop + tap-to-swap) ----
   // A slot is identified by { team: teamIndex, slot: rosterIndex }.
   let swapSel = null;   // first slot chosen in a tap-to-swap
+  let teamSwapSel = null; // first team chosen in a header-to-header roster swap
   let dragSrc = null;   // slot currently being dragged
   let dndActive = false;
 
@@ -1891,9 +1904,43 @@ const DEFAULT_CONFIG = {
 
   function tapSlot(loc) {
     if (dndActive) return;              // ignore the click that ends a drag
+    if (teamSwapSel !== null) teamSwapSel = null;
     if (!swapSel) { swapSel = loc; render(); return; }
     if (sameSlot(swapSel, loc)) { swapSel = null; render(); return; }
     swapPlayers(swapSel, loc);
+  }
+
+  // Swap complete rosters while keeping team identity and schedule entries fixed.
+  function tapTeamHeader(teamIndex) {
+    if (teamSwapSel === null) {
+      teamSwapSel = teamIndex;
+      swapSel = null;
+      render();
+      return;
+    }
+    if (teamSwapSel === teamIndex) {
+      teamSwapSel = null;
+      render();
+      return;
+    }
+
+    const first = teamSwapSel;
+    teamSwapSel = null;
+    swapSel = null;
+    roundsResetUndo = undefined;
+    shuffleUndoStack.push(snapshotRosters());
+    if (phasedOn()) {
+      CONFIG.roundRosters.forEach(round => {
+        [round[first], round[teamIndex]] = [round[teamIndex], round[first]];
+      });
+      loadRound(currentRound);
+    } else {
+      [CONFIG.teams[first].roster, CONFIG.teams[teamIndex].roster] =
+        [CONFIG.teams[teamIndex].roster, CONFIG.teams[first].roster];
+    }
+    saveConfig(CONFIG);
+    render();
+    updateUndoBtn();
   }
 
   // Attach drag-drop + tap handlers to a roster row for the given slot.
@@ -2319,7 +2366,15 @@ const DEFAULT_CONFIG = {
         if ((t.roster[i] ?? "").trim()) addRow(i, t.roster[i]);
       }
       const card = el("div", { class: "team", style: { "--team-color": t.color } },
-        el("div", { class: "team-header" },
+        el("div", {
+          class: "team-header" + (teamSwapSel === ti ? " team-selected" : ""),
+          role: "button", tabindex: "0",
+          "aria-label": teamSwapSel === ti ? `${t.name} selected for roster swap` : `Select ${t.name} for roster swap`,
+          onclick: () => tapTeamHeader(ti),
+          onkeydown: (e) => {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tapTeamHeader(ti); }
+          },
+        },
           el("span", { class: "team-name" }, t.name),
           el("span", { class: "team-wins", title: `${wins[t.name] ?? 0} win${(wins[t.name] ?? 0) === 1 ? "" : "s"}` },
             el("span", { class: "wins-label" }, "🏆"),
