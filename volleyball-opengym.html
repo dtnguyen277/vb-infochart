@@ -16,6 +16,7 @@
 <script>
 const DEFAULT_CONFIG = {
   sessionTitle: "Sunday Open Gym",
+  autoDate: true,
   date: "May 25, 2026",
   subtitle: "",                  // optional: "7:00 - 9:00 PM" etc.
 
@@ -1431,7 +1432,18 @@ const DEFAULT_CONFIG = {
       bye: typeof m.bye === "string" ? m.bye : null,
     }));
   }
+  function todayDate() {
+    return new Date().toLocaleDateString("en-US",
+      { month: "long", day: "numeric", year: "numeric" });
+  }
+
+  function applyAutoDate(cfg) {
+    if (cfg.autoDate) cfg.date = todayDate();
+  }
+
   function normalizeConfig(cfg) {
+    cfg.autoDate = cfg.autoDate !== false;
+    applyAutoDate(cfg);
     cfg.matches = normalizeMatches(cfg.matches);
     // Phased rosters: coerce the flag; drop a malformed store, and sanitize a
     // valid one into an array-of-rounds of array-of-teams of string rosters
@@ -1557,6 +1569,7 @@ const DEFAULT_CONFIG = {
     return normalizeConfig(structuredClone(DEFAULT_CONFIG));
   }
   function saveConfig(cfg) {
+    applyAutoDate(cfg);
     // Keep the per-round store consistent with the round/team counts and the
     // live board before persisting, so what's on disk always matches state
     // (e.g. after adding/removing a round, where the store grows in render()).
@@ -2660,6 +2673,7 @@ const DEFAULT_CONFIG = {
   }
 
   function render() {
+    applyAutoDate(CONFIG);
     closeTeamPicker();
     if (phasedOn()) { syncRoundRosters(); loadRound(currentRound); }
     const stage = $("#stage");
@@ -2676,6 +2690,7 @@ const DEFAULT_CONFIG = {
 
   // ============ EDITOR ============
   function openEditor() {
+    applyAutoDate(CONFIG);
     DRAFT = structuredClone(CONFIG);
     editRound = currentRound; // start editing whichever round the board shows
     renderEditor();
@@ -2802,6 +2817,8 @@ const DEFAULT_CONFIG = {
       ));
     body.innerHTML = "";
 
+    applyAutoDate(DRAFT);
+
     // Session
     const sessionSec = el("details", { class: "ed-section" },
       sectionSummary("Session", "📅"),
@@ -2809,23 +2826,32 @@ const DEFAULT_CONFIG = {
         el("label", {}, "Title"),
         input(DRAFT.sessionTitle, v => DRAFT.sessionTitle = v)),
       (() => {
+        const toggle = el("input", { type: "checkbox" });
+        toggle.checked = DRAFT.autoDate;
+        toggle.addEventListener("change", () => {
+          DRAFT.autoDate = toggle.checked;
+          renderEditor();
+        });
+        return el("label", { class: "ed-toggle" },
+          toggle, el("span", {}, "AutoDate"));
+      })(),
+      (() => {
         const dateInput = input(DRAFT.date, v => DRAFT.date = v, { placeholder: "May 25, 2026" });
+        dateInput.id = "sessionDate";
+        dateInput.disabled = DRAFT.autoDate;
+        const todayButton = el("button", {
+          type: "button",
+          class: "today-btn",
+          title: "Set to today's date",
+          onclick: () => {
+            DRAFT.date = todayDate();
+            dateInput.value = DRAFT.date;
+          },
+        }, "Today");
+        todayButton.disabled = DRAFT.autoDate;
         return el("div", { class: "ed-row" },
-          el("label", {}, "Date"),
-          el("div", { class: "date-row" },
-            dateInput,
-            el("button", {
-              type: "button",
-              class: "today-btn",
-              title: "Set to today's date",
-              onclick: () => {
-                const today = new Date().toLocaleDateString("en-US",
-                  { month: "long", day: "numeric", year: "numeric" });
-                DRAFT.date = today;
-                dateInput.value = today;
-              },
-            }, "Today"),
-          ));
+          el("label", { for: "sessionDate" }, "Date"),
+          el("div", { class: "date-row" }, dateInput, todayButton));
       })(),
       el("div", { class: "ed-row" },
         el("label", {}, "Subtitle"),
@@ -3540,6 +3566,20 @@ const DEFAULT_CONFIG = {
     if (e.key === "Escape" && $("#editor").classList.contains("open")) closeEditor();
     if (e.key === "Escape" && $("#shotOverlay").classList.contains("open")) closeShot();
   });
+
+  function refreshAutoDate() {
+    if (CONFIG.autoDate && CONFIG.date !== todayDate()) {
+      saveConfig(CONFIG);
+      render();
+    }
+    if (DRAFT && DRAFT.autoDate) {
+      applyAutoDate(DRAFT);
+      const dateInput = $("#sessionDate");
+      if (dateInput) dateInput.value = DRAFT.date;
+    }
+  }
+  setInterval(refreshAutoDate, 60000);
+  window.addEventListener("focus", refreshAutoDate);
 
   render();
 </script>
