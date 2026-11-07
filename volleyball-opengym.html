@@ -91,6 +91,11 @@ const DEFAULT_CONFIG = {
     font-size: 1.6vh; font-weight: 600; color: var(--muted);
     text-transform: uppercase; letter-spacing: 0.18em;
   }
+  .header .header-end {
+    display: flex; align-items: center; gap: 1.4vw;
+    margin-left: auto;
+  }
+  .header-actions { display: flex; align-items: center; gap: 1vh; flex-shrink: 0; }
   .header .date-block {
     display: flex; flex-direction: column; align-items: flex-end; gap: 0.2vh;
     border-left: 2px solid var(--border);
@@ -563,9 +568,6 @@ const DEFAULT_CONFIG = {
 
   /* ---------- EDITOR ---------- */
   .edit-btn {
-    position: fixed;
-    bottom: 1.6vh; right: 1.6vh;
-    z-index: 10;
     width: 4.2vh; height: 4.2vh;
     display: inline-flex; align-items: center; justify-content: center;
     background: rgba(255,255,255,0.12);
@@ -586,11 +588,8 @@ const DEFAULT_CONFIG = {
   }
   .edit-btn svg { width: 2vh; height: 2vh; display: block; }
 
-  /* screenshot button — stacked above the edit button */
+  /* Screenshot button. */
   .shot-btn {
-    position: fixed;
-    bottom: calc(1.6vh + 4.2vh + 1vh); right: 1.6vh;
-    z-index: 10;
     width: 4.2vh; height: 4.2vh;
     display: inline-flex; align-items: center; justify-content: center;
     background: rgba(255,255,255,0.12);
@@ -686,30 +685,28 @@ const DEFAULT_CONFIG = {
     transition: color 0.12s, border-color 0.12s;
   }
   .team-clear:hover { color: #f87171; border-color: #7f1d1d; }
-  .shuffle-fab {
-    position: fixed;
-    bottom: 1.6vh; left: 1.6vh;
-    z-index: 10;
-    display: flex; gap: 0.8vh;
-    opacity: 0.6;
-    transition: opacity 0.2s;
+  .shuffle-fab { position: relative; }
+  .shuffle-fab summary { list-style: none; }
+  .shuffle-fab summary::-webkit-details-marker { display: none; }
+  .shuffle-menu {
+    position: absolute; top: calc(100% + 8px); right: 0;
+    z-index: 20;
+    display: flex; flex-direction: column; gap: 6px;
+    min-width: 150px; padding: 8px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
   }
-  .shuffle-fab:hover { opacity: 1; }
-  .shuffle-fab button {
-    display: inline-flex; align-items: center; gap: 0.5vh;
-    background: rgba(255,255,255,0.12);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 0.8vh 1.6vh;
-    font-family: inherit; font-size: 1.6vh; font-weight: 700;
+  .shuffle-menu button {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.12); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; text-align: left;
+    font-family: inherit; font-size: 14px; font-weight: 700;
     cursor: pointer;
-    transition: background 0.2s, transform 0.1s;
   }
-  .shuffle-fab button:hover { background: rgba(255,255,255,0.2); }
-  .shuffle-fab button:active { transform: scale(0.95); }
-  .shuffle-fab .undo-btn { display: none; }
-  .shuffle-fab .undo-btn.show { display: inline-flex; }
+  .shuffle-menu button:hover { background: rgba(255,255,255,0.2); }
+  .shuffle-menu .undo-btn { display: none; }
+  .shuffle-menu .undo-btn.show { display: flex; }
 
   @keyframes just-shuffled-flash {
     0%   { opacity: 0.35; transform: translateY(0.6vh); }
@@ -1186,6 +1183,8 @@ const DEFAULT_CONFIG = {
     }
     .header .title { font-size: 22px; }
     .header .subtitle { font-size: 10px; }
+    .header .header-end { gap: 12px; }
+    .header-actions { gap: 8px; }
     .header .date-block { padding-left: 12px; }
     .header .weekday { font-size: 10px; }
     .header .date { font-size: 15px; }
@@ -1317,12 +1316,10 @@ const DEFAULT_CONFIG = {
 
     .edit-btn {
       width: 38px; height: 38px;
-      bottom: 12px; right: 12px;
     }
     .edit-btn svg { width: 17px; height: 17px; }
     .shot-btn {
       width: 38px; height: 38px;
-      bottom: 60px; right: 12px;
     }
     .shot-btn svg { width: 17px; height: 17px; }
     .edit-lineups-btn { font-size: 10px; padding: 5px 8px; }
@@ -1337,11 +1334,18 @@ const DEFAULT_CONFIG = {
 
 <div class="stage" id="stage"></div>
 
-<div class="shuffle-fab">
-  <button id="shufflePosBtn" title="Shuffle players within each position (live)">🎲 Positions</button>
-  <button id="shuffleAllBtn" title="Shuffle everyone across all teams (live)">🎲 Everyone</button>
-  <button id="shuffleUndoBtn" class="undo-btn" title="Undo the last change (shuffle or swap)">↩ Undo</button>
-</div>
+<details class="shuffle-fab" id="shuffleControls">
+  <summary class="shot-btn" title="Randomize players" aria-label="Randomize players">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="m18 3 3 3-3 3M18 15l3 3-3 3M3 6h3c5 0 7 12 12 12h3M3 18h3c2 0 3.5-2 5-5M14 9c1.2-1.8 2.5-3 4-3h3"/>
+    </svg>
+  </summary>
+  <div class="shuffle-menu">
+    <button id="shufflePosBtn" title="Shuffle players within each position (live)">Positions</button>
+    <button id="shuffleAllBtn" title="Shuffle everyone across all teams (live)">Everyone</button>
+    <button id="shuffleUndoBtn" class="undo-btn" title="Undo the last change (shuffle or swap)">↩ Undo</button>
+  </div>
+</details>
 <button class="shot-btn" id="shotBtn" title="Save a screenshot" aria-label="Save a screenshot">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
@@ -1474,9 +1478,9 @@ const DEFAULT_CONFIG = {
     "king":        "King of the court",
     "manual":      "Manual",
   };
-  function getScheduleMode() {
-    return SCHEDULE_MODES.includes(CONFIG.scheduleMode)
-      ? CONFIG.scheduleMode
+  function getScheduleMode(config = CONFIG) {
+    return SCHEDULE_MODES.includes(config.scheduleMode)
+      ? config.scheduleMode
       : "round-robin";
   }
 
@@ -2328,12 +2332,13 @@ const DEFAULT_CONFIG = {
     if (weekday) dateBlock.appendChild(el("div", { class: "weekday" }, weekday));
     if (CONFIG.date) dateBlock.appendChild(el("div", { class: "date" }, CONFIG.date));
 
-    return el("header", { class: "header" }, titleBlock, dateBlock);
+    return el("header", { class: "header" }, titleBlock,
+      el("div", { class: "header-end" }, headerActions, dateBlock));
   }
 
-  function computeWinTotals() {
-    const totals = Object.fromEntries(CONFIG.teams.map(t => [t.name, 0]));
-    const matches = CONFIG.matches ?? generateAutoSchedule(CONFIG.teams, CONFIG.roundRobinRounds, getScheduleMode());
+  function computeWinTotals(config = CONFIG) {
+    const totals = Object.fromEntries(config.teams.map(t => [t.name, 0]));
+    const matches = config.matches ?? generateAutoSchedule(config.teams, config.roundRobinRounds, getScheduleMode(config));
     for (const m of matches) {
       for (const p of (m.pairings || [])) {
         const pair = normalizePairing(p);
@@ -2343,6 +2348,18 @@ const DEFAULT_CONFIG = {
       }
     }
     return totals;
+  }
+
+  function teamWinsJson(config) {
+    const wins = computeWinTotals(config);
+    const data = {
+      teams: config.teams.map(team => ({
+        name: team.name,
+        wins: wins[team.name] ?? 0,
+        players: team.roster.map(name => (name ?? "").trim()).filter(Boolean),
+      })),
+    };
+    return JSON.stringify(data, null, 2);
   }
 
   function subsFilled(t) {
@@ -2819,6 +2836,18 @@ const DEFAULT_CONFIG = {
 
     applyAutoDate(DRAFT);
 
+    const teamWinsText = el("textarea", {
+      readonly: "",
+      id: "teamWinsPreview",
+      "aria-label": "Teams, players, and wins JSON",
+      spellcheck: "false",
+    });
+    const refreshTeamWinsPreview = () => { teamWinsText.value = teamWinsJson(DRAFT); };
+    refreshTeamWinsPreview();
+    body.oninput = refreshTeamWinsPreview;
+    body.onchange = refreshTeamWinsPreview;
+    const teamWinsStatus = el("div", { class: "io-status", role: "status" });
+
     // Session
     const sessionSec = el("details", { class: "ed-section" },
       sectionSummary("Session", "📅"),
@@ -2856,6 +2885,29 @@ const DEFAULT_CONFIG = {
       el("div", { class: "ed-row" },
         el("label", {}, "Subtitle"),
         input(DRAFT.subtitle, v => DRAFT.subtitle = v, { placeholder: "7:00 - 9:00 PM (optional)" })),
+      el("div", { class: "io-section" },
+        el("label", { for: "teamWinsPreview" }, "Teams, players, and wins preview (JSON)"),
+        teamWinsText,
+        el("div", { class: "io-actions" },
+        el("button", {
+          type: "button",
+          class: "btn ghost",
+          onclick: async () => {
+            const text = teamWinsJson(DRAFT);
+            teamWinsText.value = text;
+            try {
+              await navigator.clipboard.writeText(text);
+              teamWinsStatus.className = "io-status ok";
+              teamWinsStatus.textContent = "Copied teams, players, and wins.";
+            } catch {
+              teamWinsText.focus();
+              teamWinsText.select();
+              teamWinsStatus.className = "io-status err";
+              teamWinsStatus.textContent = "Clipboard access failed. Copy the selected text manually.";
+            }
+          },
+        }, "Copy teams, players, and wins (JSON)")),
+        teamWinsStatus),
     );
     sessionSec.open = secOpen("Session", true);
     body.appendChild(sessionSec);
@@ -3566,6 +3618,21 @@ const DEFAULT_CONFIG = {
     if (e.key === "Escape" && $("#editor").classList.contains("open")) closeEditor();
     if (e.key === "Escape" && $("#shotOverlay").classList.contains("open")) closeShot();
   });
+
+  const shuffleControls = $("#shuffleControls");
+  shuffleControls.addEventListener("click", (event) => {
+    if (event.target.closest("button")) shuffleControls.open = false;
+  });
+  document.addEventListener("click", (event) => {
+    if (!shuffleControls.contains(event.target)) shuffleControls.open = false;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && shuffleControls.open) {
+      shuffleControls.open = false;
+      shuffleControls.querySelector("summary").focus();
+    }
+  });
+  const headerActions = el("div", { class: "header-actions" }, $("#editBtn"), $("#shotBtn"), shuffleControls);
 
   function refreshAutoDate() {
     if (CONFIG.autoDate && CONFIG.date !== todayDate()) {
