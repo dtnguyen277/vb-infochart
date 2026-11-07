@@ -1446,6 +1446,9 @@ const DEFAULT_CONFIG = {
   }
 
   function normalizeConfig(cfg) {
+    cfg.playerIdentities = Array.isArray(cfg.playerIdentities)
+      ? cfg.playerIdentities.filter(player => player && typeof player.name === "string" && (player.uid === null || typeof player.uid === "string"))
+      : [];
     cfg.autoDate = cfg.autoDate !== false;
     applyAutoDate(cfg);
     cfg.matches = normalizeMatches(cfg.matches);
@@ -2356,7 +2359,11 @@ const DEFAULT_CONFIG = {
       teams: config.teams.map(team => ({
         name: team.name,
         wins: wins[team.name] ?? 0,
-        players: team.roster.map(name => (name ?? "").trim()).filter(Boolean),
+        players: team.roster.map(name => (name ?? "").trim()).filter(Boolean).map(name => {
+          const identities = (config.playerIdentities || []).filter(player => player.name === name);
+          const uids = new Set(identities.map(player => player.uid));
+          return { uid: uids.size === 1 ? identities[0].uid : null, name };
+        }),
       })),
     };
     return JSON.stringify(data, null, 2);
@@ -2776,6 +2783,10 @@ const DEFAULT_CONFIG = {
   // because the roster has no setter yet.
   function populateTeamsFromPlayerData(players) {
     const teams = DRAFT.teams;
+    // Keep identities separate from name rosters so team moves retain the UID.
+    const importedNames = new Set(players.map(player => player.name.trim()));
+    DRAFT.playerIdentities = (DRAFT.playerIdentities || []).filter(player => !importedNames.has(player.name));
+    DRAFT.playerIdentities.push(...players.map(player => ({ name: player.name.trim(), uid: player.uid ?? null })));
     const remaining = players.map(player => ({
       name: player.name.trim(),
       primaryPosition: player.primaryPosition,
@@ -2812,8 +2823,14 @@ const DEFAULT_CONFIG = {
     try { parsed = JSON.parse(raw); }
     catch { throw new Error("Enter valid JSON: an array of player objects."); }
     if (!Array.isArray(parsed)) throw new Error("The JSON must be an array of player objects.");
-    const invalid = parsed.find(player => !player || typeof player !== "object" || typeof player.name !== "string" || !player.name.trim());
+    const invalid = parsed.some(player => !player || typeof player !== "object" || Array.isArray(player) || typeof player.name !== "string" || !player.name.trim());
     if (invalid) throw new Error("Every player needs a non-empty string name.");
+    if (parsed.some(player => player.uid != null && typeof player.uid !== "string")) {
+      throw new Error("Each uid must be a string or null.");
+    }
+    if (parsed.some(player => [player.primaryPosition, player.secondaryPosition].some(position => position != null && typeof position !== "string"))) {
+      throw new Error("Each position must be a string or null.");
+    }
     return parsed;
   }
 
@@ -2980,6 +2997,7 @@ const DEFAULT_CONFIG = {
       teamsSec.appendChild(el("div", { class: "team-tools ed-randomize-row" },
         ...makeRandomizeButtons()));
     }
+    refreshTeamWinsPreview();
     const importMode = DRAFT.playerImportMode || "json";
     const importModeSelect = el("select", {
       "aria-label": "Player import format",
@@ -2991,7 +3009,10 @@ const DEFAULT_CONFIG = {
     importModeSelect.value = importMode;
     const bulkInput = importMode === "json"
       ? el("textarea", {
-          placeholder: '[\n  {"name":"Alex Chen","primaryPosition":"OH","secondaryPosition":"S"}\n]',
+          placeholder: JSON.stringify([
+            { uid: "aB3xK9mP2qR7sT1uV5wY8zC4dE6", name: "Alex Nguyen", primaryPosition: "Setter", secondaryPosition: "Outside Hitter" },
+            { uid: null, name: "Guest Player", primaryPosition: null, secondaryPosition: null },
+          ], null, 2),
           "aria-label": "Position-aware player JSON",
         })
       : el("input", {
@@ -3018,7 +3039,7 @@ const DEFAULT_CONFIG = {
     ));
     teamsSec.appendChild(el("div", { class: "bulk-roster-import-hint" },
       importMode === "json"
-        ? "Uses primary positions first, secondary positions for shortages, then any remaining player. Accepts S, OH, M, OPP, and L. This replaces all player fields for the current round."
+        ? "Accepts uid as a string or null. The JSON preview exports each player with uid and name. Duplicate names with different UIDs export null. Positions accept full names, S, OH, M, OPP, L, or null. Uses primary positions first, then secondary positions, then open slots. Replaces all player fields for the current round."
         : "Paste comma-separated names to fill teams evenly. This replaces all player fields for the current round."));
     // Team cards flow two per row to use the modal's width.
     const teamsGrid = el("div", { class: "team-edit-grid" });
