@@ -2928,7 +2928,7 @@ const DEFAULT_CONFIG = {
       teamsSec.appendChild(el("div", { class: "team-tools ed-randomize-row" },
         ...makeRandomizeButtons()));
     }
-    const importMode = DRAFT.playerImportMode || "csv";
+    const importMode = DRAFT.playerImportMode || "json";
     const importModeSelect = el("select", {
       "aria-label": "Player import format",
       onchange: (e) => { DRAFT.playerImportMode = e.target.value; renderEditor(); },
