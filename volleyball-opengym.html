@@ -151,6 +151,17 @@ const DEFAULT_CONFIG = {
     color: #fff;
     text-shadow: 0 1px 2px rgba(0,0,0,0.25);
   }
+  .team-name-group { display: flex; align-items: center; gap: 0.4vw; flex: 1; min-width: 0; }
+  .team-name-group .team-name { min-width: 0; overflow-wrap: anywhere; }
+  .team-edit-btn {
+    flex: none; opacity: 0; padding: 0.15em 0.35em;
+    color: #fff; background: transparent; border: 0; border-radius: 0.45vh;
+    font: inherit; cursor: pointer;
+  }
+  .team-header:hover .team-edit-btn, .team-header:focus-within .team-edit-btn { opacity: 1; }
+  .team-edit-btn:hover, .team-edit-btn:focus-visible { background: rgba(0,0,0,0.2); }
+  .team-wins { flex: none; }
+  @media (hover: none) { .team-edit-btn { opacity: 1; } }
   .team-wins {
     display: inline-flex; align-items: baseline; gap: 0.3vw;
     background: rgba(0, 0, 0, 0.32);
@@ -725,7 +736,7 @@ const DEFAULT_CONFIG = {
   .editor {
     position: fixed;
     top: 50%; left: 50%;
-    width: min(920px, 94vw);
+    width: min(1100px, 94vw);
     height: min(860px, 90vh);
     height: min(860px, 90dvh); /* mobile-safe — accounts for URL bar */
     background: var(--panel);
@@ -753,21 +764,33 @@ const DEFAULT_CONFIG = {
     background: transparent; color: var(--muted);
     border: none; font-size: 22px; cursor: pointer; line-height: 1;
   }
+  .editor-layout { display: flex; flex: 1; min-height: 0; }
+  .editor-nav {
+    flex: 0 0 180px; overflow-y: auto; padding: 16px 12px;
+    border-right: 1px solid var(--border); background: var(--bg);
+  }
+  .editor-nav a {
+    display: block; margin-bottom: 4px; padding: 10px 8px;
+    border-radius: 6px; color: var(--muted); text-decoration: none;
+    font-size: 13px; font-weight: 600;
+  }
+  .editor-nav a:hover, .editor-nav a:focus-visible { color: var(--text); background: var(--panel-2); }
+  .editor-nav a[aria-current] { color: var(--accent); background: var(--panel-2); }
   .editor-body {
-    flex: 1;
+    flex: 1; min-width: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    padding: 16px 20px 100px;
+    padding: 16px 20px;
   }
+  .editor-section-actions { display: flex; justify-content: flex-end; margin-bottom: 12px; }
   /* When the editor is open, lock background scrolling. */
   body.editor-open { overflow: hidden !important; }
   body.editor-open .stage { pointer-events: none; }
   body.editor-open .editor { pointer-events: auto; }
   body.editor-open .editor-overlay { pointer-events: auto; }
   .editor-foot {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
+    flex: none;
     padding: 14px 20px;
     background: var(--panel);
     border-top: 1px solid var(--border);
@@ -775,6 +798,15 @@ const DEFAULT_CONFIG = {
   }
   .editor-foot .left { display: flex; gap: 8px; }
   .editor-foot .right { display: flex; gap: 8px; }
+  @media (max-width: 600px) {
+    .editor-layout { flex-direction: column; }
+    .editor-nav {
+      flex: none; display: flex; gap: 4px; overflow-x: auto;
+      padding: 8px; border-right: 0; border-bottom: 1px solid var(--border);
+    }
+    .editor-nav a { flex: none; margin: 0; padding: 8px; white-space: nowrap; }
+    .editor-body { padding: 12px; }
+  }
 
   .ed-section {
     margin-bottom: 8px;
@@ -1380,7 +1412,10 @@ const DEFAULT_CONFIG = {
     <h2>Edit Session</h2>
     <button id="closeEditor" title="Close">×</button>
   </div>
-  <div class="editor-body" id="editorBody"></div>
+  <div class="editor-layout">
+    <nav class="editor-nav" id="editorNav" aria-label="Settings sections"></nav>
+    <div class="editor-body" id="editorBody"></div>
+  </div>
   <div class="editor-foot">
     <div class="left">
       <button class="btn danger" id="resetBtn">Reset to file defaults</button>
@@ -1556,6 +1591,9 @@ const DEFAULT_CONFIG = {
     if (old === newMode) return;
     clearScheduleUndo();
     CONFIG.scheduleMode = newMode;
+    if (newMode === "five-team-round-robin") {
+      while (CONFIG.teams.length < 5) addTeam(CONFIG);
+    }
     if (newMode === "round-robin" || newMode === "five-team-round-robin") {
       // Drop stored matches so the view recomputes from teams.
       CONFIG.matches = null;
@@ -1899,6 +1937,54 @@ const DEFAULT_CONFIG = {
     requestAnimationFrame(() => { input.focus(); input.select(); });
   }
 
+  function editTeamName(group, teamIndex) {
+    if ($("input", group)) return;
+    const team = CONFIG.teams[teamIndex];
+    const oldName = team.name;
+    const input = el("input", { value: oldName, "aria-label": "Team name" });
+    $(".team-name", group).replaceWith(el("span", { class: "player-name-editor" }, input));
+    const editBtn = $(".team-edit-btn", group);
+    editBtn.textContent = "✓";
+    editBtn.title = "Save team name";
+    editBtn.setAttribute("aria-label", "Save team name");
+
+    let finished = false;
+    const finish = (save) => {
+      if (finished) return;
+      if (save) {
+        const name = input.value.trim();
+        const error = !name ? "Enter a team name."
+          : name === "TBD" ? "Choose a name other than TBD."
+          : CONFIG.teams.some((t, i) => i !== teamIndex && t.name === name) ? "This team name is already in use." : "";
+        input.setCustomValidity(error);
+        if (!input.reportValidity()) return;
+        if (name !== oldName) {
+          team.name = name;
+          for (const round of CONFIG.matches || []) {
+            if (round.bye === oldName) round.bye = name;
+            for (const pair of round.pairings || []) {
+              const teams = Array.isArray(pair) ? pair : pair.teams;
+              teams.forEach((value, i) => { if (value === oldName) teams[i] = name; });
+            }
+          }
+          clearScheduleUndo();
+          saveConfig(CONFIG);
+        }
+      }
+      finished = true;
+      render();
+    };
+    input.addEventListener("input", () => input.setCustomValidity(""));
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    });
+    editBtn.onclick = (e) => { e.stopPropagation(); finish(true); };
+    requestAnimationFrame(() => { input.focus(); input.select(); });
+  }
+
   // Swap the two players (or a player into an empty slot). Uses the shared
   // undo stack so a swap can be reverted with the Undo button.
   function swapPlayers(a, b) {
@@ -1988,18 +2074,20 @@ const DEFAULT_CONFIG = {
     };
   }
 
-  function addTeam() {
-    if (DRAFT.teams.length >= 6) return;
-    const idx = DRAFT.teams.length;
-    DRAFT.teams.push({
-      name: "Team " + (idx + 1),
+  function addTeam(config = DRAFT) {
+    if (config.teams.length >= 6) return;
+    const idx = config.teams.length;
+    let number = idx + 1;
+    while (config.teams.some(team => team.name === "Team " + number)) number++;
+    config.teams.push({
+      name: "Team " + number,
       color: COLOR_PRESETS[idx % COLOR_PRESETS.length],
       roster: ["", "", "", "", "", ""],
     });
     // Keep the per-round store index-aligned with teams: give the new team a
     // blank roster in every round.
-    if (Array.isArray(DRAFT.roundRosters)) {
-      DRAFT.roundRosters.forEach(round => round.push(["", "", "", "", "", ""]));
+    if (Array.isArray(config.roundRosters)) {
+      config.roundRosters.forEach(round => round.push(["", "", "", "", "", ""]));
     }
   }
 
@@ -2409,10 +2497,18 @@ const DEFAULT_CONFIG = {
           "aria-label": teamSwapSel === ti ? `${t.name} selected for roster swap` : `Select ${t.name} for roster swap`,
           onclick: () => tapTeamHeader(ti),
           onkeydown: (e) => {
-            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tapTeamHeader(ti); }
+            if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+              e.preventDefault(); tapTeamHeader(ti);
+            }
           },
         },
-          el("span", { class: "team-name" }, t.name),
+          el("span", { class: "team-name-group" },
+            el("span", { class: "team-name" }, t.name),
+            el("button", {
+              class: "team-edit-btn", type: "button", title: "Edit team name", "aria-label": "Edit team name",
+              onclick: (e) => { e.stopPropagation(); editTeamName(e.currentTarget.parentElement, ti); },
+            }, "✎"),
+          ),
           el("span", { class: "team-wins", title: `${wins[t.name] ?? 0} win${(wins[t.name] ?? 0) === 1 ? "" : "s"}` },
             el("span", { class: "wins-label" }, "🏆"),
             el("span", { class: "wins-num" }, String(wins[t.name] ?? 0)),
@@ -2850,6 +2946,8 @@ const DEFAULT_CONFIG = {
         el("span", { class: "ed-section-label" }, title),
       ));
     body.innerHTML = "";
+    body.appendChild(el("div", { class: "editor-section-actions" },
+      el("button", { id: "toggleAllSections", class: "btn ghost", type: "button" }, "Expand all")));
 
     applyAutoDate(DRAFT);
 
@@ -2902,29 +3000,6 @@ const DEFAULT_CONFIG = {
       el("div", { class: "ed-row" },
         el("label", {}, "Subtitle"),
         input(DRAFT.subtitle, v => DRAFT.subtitle = v, { placeholder: "7:00 - 9:00 PM (optional)" })),
-      el("div", { class: "io-section" },
-        el("label", { for: "teamWinsPreview" }, "Teams, players, and wins preview (JSON)"),
-        teamWinsText,
-        el("div", { class: "io-actions" },
-        el("button", {
-          type: "button",
-          class: "btn ghost",
-          onclick: async () => {
-            const text = teamWinsJson(DRAFT);
-            teamWinsText.value = text;
-            try {
-              await navigator.clipboard.writeText(text);
-              teamWinsStatus.className = "io-status ok";
-              teamWinsStatus.textContent = "Copied teams, players, and wins.";
-            } catch {
-              teamWinsText.focus();
-              teamWinsText.select();
-              teamWinsStatus.className = "io-status err";
-              teamWinsStatus.textContent = "Clipboard access failed. Copy the selected text manually.";
-            }
-          },
-        }, "Copy teams, players, and wins (JSON)")),
-        teamWinsStatus),
     );
     sessionSec.open = secOpen("Session", true);
     body.appendChild(sessionSec);
@@ -3193,6 +3268,9 @@ const DEFAULT_CONFIG = {
           class: "mode-btn" + (isActive ? " active" : ""),
           onclick: () => {
             DRAFT.scheduleMode = m;
+            if (m === "five-team-round-robin") {
+              while (DRAFT.teams.length < 5) addTeam();
+            }
             // Apply same transitions setScheduleMode does, but on DRAFT.
             if (m === "round-robin" || m === "five-team-round-robin") {
               DRAFT.matches = null;
@@ -3222,7 +3300,7 @@ const DEFAULT_CONFIG = {
                 }));
               }
             }
-            drawSchedule();
+            renderEditor();
           },
         }, SCHEDULE_MODE_LABELS[m]));
       }
@@ -3486,9 +3564,85 @@ const DEFAULT_CONFIG = {
       ioTextarea,
       el("div", { class: "io-actions" }, copyBtn, loadBtn, refreshBtn),
       ioStatus,
+      el("div", { class: "io-section" },
+        el("label", { for: "teamWinsPreview" }, "Teams, players, and wins preview (JSON)"),
+        teamWinsText,
+        el("div", { class: "io-actions" },
+        el("button", {
+          type: "button",
+          class: "btn ghost",
+          onclick: async () => {
+            const text = teamWinsJson(DRAFT);
+            teamWinsText.value = text;
+            try {
+              await navigator.clipboard.writeText(text);
+              teamWinsStatus.className = "io-status ok";
+              teamWinsStatus.textContent = "Copied teams, players, and wins.";
+            } catch {
+              teamWinsText.focus();
+              teamWinsText.select();
+              teamWinsStatus.className = "io-status err";
+              teamWinsStatus.textContent = "Clipboard access failed. Copy the selected text manually.";
+            }
+          },
+        }, "Copy teams, players, and wins (JSON)")),
+        teamWinsStatus),
     );
     ioSec.open = secOpen("Import / Export", false);
     body.appendChild(ioSec);
+    renderEditorNav();
+  }
+
+  function renderEditorNav() {
+    const body = $("#editorBody");
+    const nav = $("#editorNav");
+    nav.replaceChildren();
+    const sections = [...body.querySelectorAll(".ed-section")];
+    const toggleAll = $("#toggleAllSections");
+    const updateToggleAll = () => {
+      const allOpen = sections.every(section => section.open);
+      toggleAll.textContent = allOpen ? "Collapse all" : "Expand all";
+      toggleAll.setAttribute("aria-expanded", String(allOpen));
+    };
+    toggleAll.onclick = () => {
+      const expand = !sections.every(section => section.open);
+      sections.forEach(section => { section.open = expand; });
+      updateToggleAll();
+      body.onscroll();
+    };
+    sections.forEach(section => section.addEventListener("toggle", updateToggleAll));
+    updateToggleAll();
+    const links = sections.map((section, index) => {
+      section.id = `settings-section-${index}`;
+      const summary = $("summary", section);
+      const link = el("a", {
+        href: `#${section.id}`,
+        onclick: (event) => {
+          event.preventDefault();
+          section.open = true;
+          summary.focus({ preventScroll: true });
+          body.scrollTo({ top: body.scrollTop + section.getBoundingClientRect().top - body.getBoundingClientRect().top - 16 });
+          markCurrent(index);
+        },
+      }, summary.dataset.section);
+      nav.appendChild(link);
+      return link;
+    });
+    function markCurrent(index) {
+      links.forEach((link, i) => {
+        if (i === index) link.setAttribute("aria-current", "location");
+        else link.removeAttribute("aria-current");
+      });
+    }
+    body.onscroll = () => {
+      const top = body.getBoundingClientRect().top + 24;
+      let current = 0;
+      sections.forEach((section, index) => {
+        if (section.getBoundingClientRect().top <= top) current = index;
+      });
+      markCurrent(current);
+    };
+    body.onscroll();
   }
 
   function commitSave() {
