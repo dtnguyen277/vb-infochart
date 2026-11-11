@@ -2077,11 +2077,22 @@ const DEFAULT_CONFIG = {
   function addTeam(config = DRAFT) {
     if (config.teams.length >= 6) return;
     const idx = config.teams.length;
-    let number = idx + 1;
-    while (config.teams.some(team => team.name === "Team " + number)) number++;
+    const colorNames = ["Red", "Orange", "Yellow", "Green", "Teal", "Blue", "Purple", "Pink"];
+    let colorIndex = idx % COLOR_PRESETS.length;
+    for (let offset = 0; offset < COLOR_PRESETS.length; offset++) {
+      const candidate = (idx + offset) % COLOR_PRESETS.length;
+      if (!config.teams.some(team => team.color.toLowerCase() === COLOR_PRESETS[candidate])) {
+        colorIndex = candidate;
+        break;
+      }
+    }
+    const baseName = colorNames[colorIndex];
+    let name = baseName;
+    let number = 2;
+    while (config.teams.some(team => team.name === name)) name = baseName + " " + number++;
     config.teams.push({
-      name: "Team " + number,
-      color: COLOR_PRESETS[idx % COLOR_PRESETS.length],
+      name,
+      color: COLOR_PRESETS[colorIndex],
       roster: ["", "", "", "", "", ""],
     });
     // Keep the per-round store index-aligned with teams: give the new team a
